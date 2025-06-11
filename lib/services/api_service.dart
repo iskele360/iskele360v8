@@ -1,746 +1,542 @@
-import 'dart:convert';
-import 'dart:math';
-import 'package:http/http.dart' as http;
+import 'dart:io';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:iskele360v7/models/worker_model.dart';
-import 'package:iskele360v7/models/supplier_model.dart';
-import 'package:iskele360v7/models/inventory_model.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:iskele360v7/models/models.dart';
+import 'package:iskele360v7/utils/constants.dart';
+import 'package:logger/logger.dart';
 
 class ApiService {
-  // API URL'i (gerçek bir API olduğunda kullanılacak)
-  // static const String baseUrl = 'http://192.168.1.105:5050/api';
+  static final ApiService _instance = ApiService._internal();
   
-  // Token'ı SharedPreferences'a kaydetmek için key
-  static const String _tokenKey = 'auth_token';
-  static const String _userDataKey = 'user_data';
-  static const String _workersKey = 'workers_data';
-  static const String _suppliersKey = 'suppliers_data';
-  static const String _inventoryKey = 'inventory_data';
-  static const String _supervisorsKey = 'supervisors_data';
+  factory ApiService() {
+    return _instance;
+  }
   
-  // HTTP istekleri için headers
-  Future<Map<String, String>> _getHeaders() async {
-    final token = await getToken();
-    return {
+  final Dio _dio = Dio();
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  final Logger _logger = Logger();
+  
+  ApiService._internal() {
+    _initDio();
+  }
+  
+  // Dio istemcisini başlat ve interceptor'ları ayarla
+  void _initDio() {
+    _dio.options.baseUrl = AppConstants.apiBaseUrl;
+    _dio.options.connectTimeout = const Duration(seconds: 10);
+    _dio.options.receiveTimeout = const Duration(seconds: 10);
+    _dio.options.headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
     };
+    
+    // Request interceptor - her istekte token kontrolü yap
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          final token = await _secureStorage.read(key: AppConstants.tokenKey);
+          if (token != null) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
+          return handler.next(options);
+        },
+        onError: (error, handler) {
+          _handleApiError(error);
+          return handler.next(error);
+        },
+      ),
+    );
+    
+    // Log interceptor - DEBUG modda request ve responseları logla
+    if (kDebugMode) {
+      _dio.interceptors.add(LogInterceptor(
+        requestBody: true,
+        responseBody: true,
+      ));
+    }
   }
   
-  // Token'ı kaydet
-  Future<void> saveToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
-  }
-  
-  // Token'ı getir
-  Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_tokenKey);
-  }
-  
-  // Kullanıcı verilerini kaydet
-  Future<void> saveUserData(Map<String, dynamic> userData) async {
+  // GET isteği
+  Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final userDataString = json.encode(userData);
-      await prefs.setString(_userDataKey, userDataString);
-      
-      // Ayrıca oturum durumunu da kaydet
-      await prefs.setBool('is_logged_in', true);
-      
-      print('Kullanıcı verileri kaydedildi: $userDataString');
+      final response = await _dio.get(
+        path,
+        queryParameters: queryParameters,
+      );
+      return response;
     } catch (e) {
-      print('Kullanıcı verileri kaydedilirken hata: $e');
+      if (e is DioException) {
+        _handleApiError(e);
+      }
       rethrow;
     }
   }
   
-  // Kullanıcı verilerini getir
-  Future<Map<String, dynamic>?> getUserData() async {
+  // POST isteği
+  Future<Response> post(String path, {dynamic data, Map<String, dynamic>? queryParameters}) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final userDataString = prefs.getString(_userDataKey);
-      
-      if (userDataString == null || userDataString.isEmpty) {
-        print('Kayıtlı kullanıcı verisi bulunamadı');
-        return null;
-      }
-      
-      print('Kullanıcı verileri getirildi: $userDataString');
-      return json.decode(userDataString) as Map<String, dynamic>;
+      final response = await _dio.post(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+      );
+      return response;
     } catch (e) {
-      print('Kullanıcı verileri getirilirken hata: $e');
-      return null;
+      if (e is DioException) {
+        _handleApiError(e);
+      }
+      rethrow;
     }
   }
   
-  // Token ve kullanıcı verisini temizle (çıkış yapma)
-  Future<void> clearAuthData() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
-    await prefs.remove(_userDataKey);
+  // PUT isteği
+  Future<Response> put(String path, {dynamic data, Map<String, dynamic>? queryParameters}) async {
+    try {
+      final response = await _dio.put(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+      );
+      return response;
+    } catch (e) {
+      if (e is DioException) {
+        _handleApiError(e);
+      }
+      rethrow;
+    }
   }
   
-  // Puantajcı kaydı - Yerel olarak kayıt oluşturur
-  Future<Map<String, dynamic>> registerSupervisor({
+  // DELETE isteği
+  Future<Response> delete(String path, {dynamic data, Map<String, dynamic>? queryParameters}) async {
+    try {
+      final response = await _dio.delete(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+      );
+      return response;
+    } catch (e) {
+      if (e is DioException) {
+        _handleApiError(e);
+      }
+      rethrow;
+    }
+  }
+  
+  // Token'ı ayarla
+  void setToken(String token) {
+    _dio.options.headers['Authorization'] = 'Bearer $token';
+  }
+  
+  // Hata yönetimi
+  void _handleApiError(DioException error) {
+    if (error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.sendTimeout) {
+      _logger.e('Bağlantı zaman aşımına uğradı: ${error.message}');
+    } else if (error.type == DioExceptionType.badResponse) {
+      final statusCode = error.response?.statusCode;
+      final responseData = error.response?.data;
+      
+      if (statusCode == 401) {
+        _logger.e('Yetkilendirme hatası: Oturum süresi dolmuş olabilir');
+        // Burada oturum süresinin dolduğuna dair işlemler yapılabilir
+        // Örneğin: AuthProvider üzerinden logout() çağrılabilir
+      } else {
+        _logger.e('Sunucu hatası ($statusCode): $responseData');
+      }
+    } else if (error.type == DioExceptionType.connectionError) {
+      _logger.e('Ağ bağlantısı hatası: ${error.message}');
+    } else {
+      _logger.e('API hatası: ${error.message}');
+    }
+  }
+  
+  // Token kaydetme
+  Future<void> saveToken(String token) async {
+    await _secureStorage.write(key: AppConstants.tokenKey, value: token);
+    setToken(token);
+  }
+  
+  // Token silme
+  Future<void> deleteToken() async {
+    await _secureStorage.delete(key: AppConstants.tokenKey);
+    _dio.options.headers.remove('Authorization');
+  }
+  
+  // Token varlığını kontrol etme (oturum açık mı?)
+  Future<bool> hasToken() async {
+    final token = await _secureStorage.read(key: AppConstants.tokenKey);
+    return token != null && token.isNotEmpty;
+  }
+  
+  // Kullanıcı kaydı
+  Future<User> register({
+    required String name,
+    required String surname,
+    required String email,
+    required String password,
+    String? role,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/auth/register',
+        data: {
+          'name': name,
+          'surname': surname,
+          'email': email,
+          'password': password,
+          if (role != null) 'role': role,
+        },
+      );
+      
+      final data = response.data;
+      
+      // Token'ı kaydet
+      if (data['token'] != null) {
+        await saveToken(data['token']);
+      }
+      
+      return User.fromJson(data['data']);
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // Puantajcı (supervisor) kaydı
+  Future<User> registerSupervisor({
     required String name,
     required String surname,
     required String email,
     required String password,
   }) async {
-    // API yerine yerel depolamada saklıyoruz
-    final supervisorId = DateTime.now().millisecondsSinceEpoch.toString();
-    final supervisorData = {
-      'id': supervisorId,
-      'name': name,
-      'surname': surname,
-      'email': email,
-      'password': password, // Gerçek uygulamada şifre böyle saklanmaz, hashlenmelidir
-      'role': 'supervisor',
-      'createdAt': DateTime.now().toIso8601String(),
-    };
-    
-    // Supervisor'ı yerel depolamaya ekle
-    await _saveSupervisor(supervisorData);
-    
-    // Token oluştur (basit bir token)
-    final token = 'token_$supervisorId';
-    
-    // Token ve kullanıcı verisini kaydet
-    await saveToken(token);
-    await saveUserData(supervisorData);
-    
-    return {
-      'token': token,
-      'data': {
-        'user': supervisorData,
-      }
-    };
+    return register(
+      name: name,
+      surname: surname,
+      email: email,
+      password: password,
+      role: AppConstants.roleSupervisor,
+    );
   }
   
-  // Supervisor'ı kaydet
-  Future<void> _saveSupervisor(Map<String, dynamic> supervisorData) async {
-    final prefs = await SharedPreferences.getInstance();
-    final supervisorsString = prefs.getString(_supervisorsKey) ?? '[]';
-    final List<dynamic> supervisorsJson = json.decode(supervisorsString);
-    
-    // Mevcut supervisor'ları al
-    final supervisors = List<Map<String, dynamic>>.from(supervisorsJson);
-    
-    // Yeni supervisor'ı ekle
-    supervisors.add(supervisorData);
-    
-    // Tüm supervisor'ları JSON'a dönüştür ve kaydet
-    await prefs.setString(_supervisorsKey, json.encode(supervisors));
-  }
-  
-  // Email ile giriş - Yerel olarak doğrulama yapar
-  Future<Map<String, dynamic>> loginWithEmail({
+  // Kullanıcı girişi (email ile)
+  Future<User> loginWithEmail({
     required String email,
     required String password,
   }) async {
-    // Tüm supervisor'ları al
-    final prefs = await SharedPreferences.getInstance();
-    final supervisorsString = prefs.getString(_supervisorsKey) ?? '[]';
-    final List<dynamic> supervisorsJson = json.decode(supervisorsString);
-    
-    // Email ve şifre ile eşleşen supervisor'ı bul
-    final supervisor = supervisorsJson.firstWhere(
-      (s) => s['email'] == email && s['password'] == password,
-      orElse: () => throw Exception('Geçersiz email veya şifre'),
-    );
-    
-    // Token oluştur (basit bir token)
-    final token = 'token_${supervisor['id']}';
-    
-    // Token ve kullanıcı verisini kaydet
-    await saveToken(token);
-    await saveUserData(supervisor);
-    
-    return {
-      'token': token,
-      'data': {
-        'user': supervisor,
-      }
-    };
-  }
-  
-  // Kullanıcı profili
-  Future<Map<String, dynamic>> getUserProfile() async {
-    final userData = await getUserData();
-    if (userData == null) {
-      throw Exception('Kullanıcı bulunamadı');
-    }
-    return userData;
-  }
-  
-  // Kullanıcının giriş yapmış olup olmadığını kontrol et
-  Future<bool> isLoggedIn() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool('is_logged_in') ?? false;
-    } catch (e) {
-      print('Oturum durumu kontrol edilirken hata: $e');
-      return false;
-    }
-  }
-  
-  // Kullanıcı rolünü getir
-  Future<String?> getUserRole() async {
-    final userData = await getUserData();
-    return userData?['role'];
-  }
-  
-  // 6 haneli rastgele kod oluştur
-  String generateRandomCode() {
-    final random = Random();
-    String code = '';
-    for (int i = 0; i < 6; i++) {
-      code += random.nextInt(10).toString();
-    }
-    return code;
-  }
-  
-  // İşçi ekle
-  Future<Worker> addWorker({
-    required String name,
-    required String surname,
-  }) async {
-    // Puantajcı bilgilerini al
-    final userData = await getUserData();
-    final supervisorId = userData?['id'] ?? 'unknown_supervisor';
-    
-    print('İşçi ekleyen puantajcı ID: $supervisorId');
-    
-    // 6 haneli benzersiz kod oluştur
-    final code = generateRandomCode();
-    
-    // İşçi oluştur
-    final worker = Worker(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: name,
-      surname: surname,
-      code: code,
-      password: null,
-      supervisorId: supervisorId, // Puantajcının ID'sini kullan
-      createdAt: DateTime.now(),
-    );
-    
-    // İşçiyi doğrudan SharedPreferences'a kaydedelim
-    await _saveWorkerDirectly(worker);
-    
-    return worker;
-  }
-  
-  // İşçiyi doğrudan SharedPreferences'a kaydet
-  Future<void> _saveWorkerDirectly(Worker worker) async {
-    final prefs = await SharedPreferences.getInstance();
-    final workersString = prefs.getString(_workersKey) ?? '[]';
-    
-    print('Mevcut işçi verisi: $workersString');
-    
-    List<dynamic> workersJson = [];
-    try {
-      workersJson = json.decode(workersString) as List<dynamic>;
-    } catch (e) {
-      print('JSON çözümlemede hata: $e');
-      workersJson = [];
-    }
-    
-    // Yeni işçiyi ekle
-    final workerJson = worker.toJson();
-    workersJson.add(workerJson);
-    
-    // Güncellenmiş listeyi kaydet
-    final updatedWorkersString = json.encode(workersJson);
-    await prefs.setString(_workersKey, updatedWorkersString);
-    
-    print('İşçi başarıyla kaydedildi: ${worker.name} ${worker.surname}, Kod: ${worker.code}');
-    print('Güncellenmiş işçi verisi: $updatedWorkersString');
-    
-    // Veri kalıcılığını kontrol et
-    final verifyData = prefs.getString(_workersKey);
-    print('Kalıcılık kontrolü: ${verifyData != null && verifyData.isNotEmpty}');
-  }
-  
-  // İşçileri getir - Tüm işçileri döndürür, supervisor filtresi uygulanmaz
-  Future<List<Worker>> getAllWorkers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final workersString = prefs.getString(_workersKey) ?? '[]';
-    
-    print('Tüm işçi verisi: $workersString');
-    
-    final List<dynamic> workersJson = json.decode(workersString);
-    
-    // Tüm işçileri döndür, filtreleme yok
-    final allWorkers = workersJson.map((w) {
-      try {
-        return Worker.fromJson(w as Map<String, dynamic>);
-      } catch (e) {
-        print('İşçi dönüştürme hatası: $e');
-        return null;
-      }
-    }).whereType<Worker>().toList();
-    
-    print('Toplam işçi sayısı: ${allWorkers.length}');
-    return allWorkers;
-  }
-  
-  // İşçileri getir - Sadece belirli bir puantajcıya ait işçileri döndürür
-  Future<List<Worker>> getWorkers() async {
-    final userData = await getUserData();
-    if (userData == null) {
-      print('Oturum açılmamış, tüm işçiler döndürülüyor');
-      return getAllWorkers();
-    }
-    
-    final supervisorId = userData['id'];
-    print('Puantajcı ID: $supervisorId için işçiler getiriliyor');
-    
-    final allWorkers = await getAllWorkers();
-    
-    // Sadece bu puantajcıya ait işçileri filtrele
-    final supervisorWorkers = allWorkers.where((w) => w.supervisorId == supervisorId).toList();
-    
-    print('Bu puantajcıya ait işçi sayısı: ${supervisorWorkers.length}');
-    return supervisorWorkers;
-  }
-  
-  // Malzemeci ekle
-  Future<Supplier> addSupplier({
-    required String name,
-    required String surname,
-  }) async {
-    // Puantajcı bilgilerini al
-    final userData = await getUserData();
-    final supervisorId = userData?['id'] ?? 'unknown_supervisor';
-    
-    print('Malzemeci ekleyen puantajcı ID: $supervisorId');
-    
-    // 6 haneli benzersiz kod oluştur
-    final code = generateRandomCode();
-    
-    // Malzemeci oluştur
-    final supplier = Supplier(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: name,
-      surname: surname,
-      code: code,
-      supervisorId: supervisorId,
-      createdAt: DateTime.now(),
-    );
-    
-    // Malzemeciyi doğrudan SharedPreferences'a kaydedelim
-    await _saveSupplierDirectly(supplier);
-    
-    return supplier;
-  }
-  
-  // Malzemeciyi doğrudan SharedPreferences'a kaydet
-  Future<void> _saveSupplierDirectly(Supplier supplier) async {
-    final prefs = await SharedPreferences.getInstance();
-    final suppliersString = prefs.getString(_suppliersKey) ?? '[]';
-    
-    print('Mevcut malzemeci verisi: $suppliersString');
-    
-    List<dynamic> suppliersJson = [];
-    try {
-      suppliersJson = json.decode(suppliersString) as List<dynamic>;
-    } catch (e) {
-      print('JSON çözümlemede hata: $e');
-      suppliersJson = [];
-    }
-    
-    // Yeni malzemeciyi ekle
-    final supplierJson = supplier.toJson();
-    suppliersJson.add(supplierJson);
-    
-    // Güncellenmiş listeyi kaydet
-    final updatedSuppliersString = json.encode(suppliersJson);
-    await prefs.setString(_suppliersKey, updatedSuppliersString);
-    
-    print('Malzemeci başarıyla kaydedildi: ${supplier.name} ${supplier.surname}, Kod: ${supplier.code}');
-    print('Güncellenmiş malzemeci verisi: $updatedSuppliersString');
-  }
-  
-  // Tüm malzemecileri getir
-  Future<List<Supplier>> getAllSuppliers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final suppliersString = prefs.getString(_suppliersKey) ?? '[]';
-    
-    print('Tüm malzemeci verisi: $suppliersString');
-    
-    final List<dynamic> suppliersJson = json.decode(suppliersString);
-    
-    // Tüm malzemecileri döndür, filtreleme yok
-    final allSuppliers = suppliersJson.map((s) {
-      try {
-        return Supplier.fromJson(s as Map<String, dynamic>);
-      } catch (e) {
-        print('Malzemeci dönüştürme hatası: $e');
-        return null;
-      }
-    }).whereType<Supplier>().toList();
-    
-    print('Toplam malzemeci sayısı: ${allSuppliers.length}');
-    return allSuppliers;
-  }
-  
-  // Sadece belirli bir puantajcıya ait malzemecileri getir
-  Future<List<Supplier>> getSuppliers() async {
-    final userData = await getUserData();
-    if (userData == null) {
-      print('Oturum açılmamış, tüm malzemeciler döndürülüyor');
-      return getAllSuppliers();
-    }
-    
-    final supervisorId = userData['id'];
-    print('Puantajcı ID: $supervisorId için malzemeciler getiriliyor');
-    
-    final allSuppliers = await getAllSuppliers();
-    
-    // Sadece bu puantajcıya ait malzemecileri filtrele
-    final supervisorSuppliers = allSuppliers.where((s) => s.supervisorId == supervisorId).toList();
-    
-    print('Bu puantajcıya ait malzemeci sayısı: ${supervisorSuppliers.length}');
-    return supervisorSuppliers;
-  }
-  
-  // Malzemeci kodu ile giriş
-  Future<Map<String, dynamic>> loginWithSupplierCode({
-    required String name,
-    required String surname,
-    required String code,
-  }) async {
-    try {
-      print('Malzemeci girişi deneniyor: Ad: $name, Soyad: $surname, Kod: $code');
-      
-      // Giriş bilgilerini düzenle - trim ile boşlukları kaldır, toLowerCase ile küçük harfe çevir
-      final trimmedName = name.trim().toLowerCase();
-      final trimmedSurname = surname.trim().toLowerCase();
-      final trimmedCode = code.trim();
-      
-      // Tüm malzemecileri al
-      final allSuppliers = await getAllSuppliers();
-      print('Toplam malzemeci sayısı: ${allSuppliers.length}');
-      
-      // Tüm malzemecileri konsola yazdır (debug için)
-      for (var s in allSuppliers) {
-        print('Malzemeci: ${s.name} ${s.surname}, Kod: ${s.code}');
-      }
-      
-      // Kod ve isim/soyisim ile eşleşen malzemeciyi bul
-      // Büyük/küçük harf ve boşluk farkını önemsememek için trim ve toLowerCase kullan
-      final supplier = allSuppliers.firstWhere(
-        (s) => 
-          s.code.trim() == trimmedCode && 
-          s.name.trim().toLowerCase() == trimmedName &&
-          s.surname.trim().toLowerCase() == trimmedSurname,
-        orElse: () {
-          print('Eşleşen malzemeci bulunamadı');
-          throw Exception('Geçersiz malzemeci bilgileri');
+      final response = await _dio.post(
+        '/auth/login',
+        data: {
+          'email': email,
+          'password': password,
         },
       );
       
-      print('Malzemeci bulundu: ${supplier.name} ${supplier.surname}, Kod: ${supplier.code}');
+      final data = response.data;
       
-      // Malzemeci bilgilerini kullanıcı verisi olarak kaydet
-      await saveUserData({
-        'id': supplier.id,
-        'name': supplier.name,
-        'surname': supplier.surname,
-        'code': supplier.code,
-        'supervisorId': supplier.supervisorId,
-        'role': 'supplier',
-      });
+      // Token'ı kaydet
+      if (data['token'] != null) {
+        await saveToken(data['token']);
+      }
       
-      return {
-        'success': true,
-        'data': {
-          'user': supplier.toJson(),
-        }
-      };
-    } catch (e) {
-      print('Malzemeci giriş hatası: $e');
-      return {
-        'success': false,
-        'error': e.toString(),
-      };
+      return User.fromJson(data['data']);
+    } on DioException catch (e) {
+      throw _formatError(e);
     }
   }
   
-  // İşçi kodu ile giriş
-  Future<Map<String, dynamic>> loginWithWorkerCode({
-    required String name,
-    required String surname,
+  // Kullanıcı girişi (kod ile - işçi ve malzemeci için)
+  Future<User> loginWithCode({
     required String code,
+    required String password,
   }) async {
     try {
-      print('İşçi girişi deneniyor: Ad: $name, Soyad: $surname, Kod: $code');
-      
-      // Giriş bilgilerini düzenle - trim ile boşlukları kaldır, toLowerCase ile küçük harfe çevir
-      final trimmedName = name.trim().toLowerCase();
-      final trimmedSurname = surname.trim().toLowerCase();
-      final trimmedCode = code.trim();
-      
-      // Tüm işçileri al
-      final allWorkers = await getAllWorkers();
-      print('Toplam işçi sayısı: ${allWorkers.length}');
-      
-      // Tüm işçileri konsola yazdır (debug için)
-      for (var w in allWorkers) {
-        print('İşçi: ${w.name} ${w.surname}, Kod: ${w.code}');
-      }
-      
-      // Kod ve isim/soyisim ile eşleşen işçiyi bul
-      // Büyük/küçük harf ve boşluk farkını önemsememek için trim ve toLowerCase kullan
-      final worker = allWorkers.firstWhere(
-        (w) => 
-          w.code.trim() == trimmedCode && 
-          w.name.trim().toLowerCase() == trimmedName &&
-          w.surname.trim().toLowerCase() == trimmedSurname,
-        orElse: () {
-          print('Eşleşen işçi bulunamadı');
-          throw Exception('Geçersiz işçi bilgileri');
+      final response = await _dio.post(
+        '/auth/login',
+        data: {
+          'code': code,
+          'password': password,
         },
       );
       
-      print('İşçi bulundu: ${worker.name} ${worker.surname}, Kod: ${worker.code}');
+      final data = response.data;
       
-      // İşçi bilgilerini kullanıcı verisi olarak kaydet
-      await saveUserData({
-        'id': worker.id,
-        'name': worker.name,
-        'surname': worker.surname,
-        'code': worker.code,
-        'supervisorId': worker.supervisorId,
-        'role': 'worker',
-      });
-      
-      return {
-        'success': true,
-        'data': {
-          'user': worker.toJson(),
-        }
-      };
-    } catch (e) {
-      print('İşçi giriş hatası: $e');
-      return {
-        'success': false,
-        'error': e.toString(),
-      };
-    }
-  }
-  
-  // Zimmet ekleme
-  Future<Map<String, dynamic>> addInventory({
-    required String workerId,
-    required String itemName,
-    required int quantity,
-    required String supplierId,
-    required String supervisorId,
-    required String date,
-  }) async {
-    try {
-      print('Zimmet ekleniyor: $itemName, Miktar: $quantity, İşçi ID: $workerId');
-      
-      // Rastgele bir ID oluştur
-      final id = _generateRandomId();
-      
-      // Yeni zimmet oluştur
-      final newInventory = Inventory(
-        id: id,
-        supervisorId: supervisorId,
-        supplierId: supplierId,
-        workerId: workerId,
-        itemName: itemName,
-        quantity: quantity,
-        date: date,
-      );
-
-      // Mevcut zimmetleri al
-      final allInventories = await getAllInventories();
-      
-      // Yeni zimmeti ekle
-      allInventories.add(newInventory);
-      
-      // Zimmetleri kaydet
-      await _saveInventoriesData(allInventories);
-      
-      print('Zimmet başarıyla eklendi. ID: $id');
-      
-      return {
-        'success': true,
-        'data': {
-          'inventory': newInventory.toJson(),
-        }
-      };
-    } catch (e) {
-      print('Zimmet ekleme hatası: $e');
-      return {
-        'success': false,
-        'error': e.toString(),
-      };
-    }
-  }
-  
-  // İşçiye ait zimmetleri getir
-  Future<List<Inventory>> getWorkerInventory(String workerId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final inventoryString = prefs.getString(_inventoryKey) ?? '[]';
-    
-    final List<dynamic> inventoryJson = json.decode(inventoryString);
-    
-    // Tüm zimmetleri oluştur
-    final allInventory = inventoryJson.map((i) {
-      try {
-        return Inventory.fromJson(i as Map<String, dynamic>);
-      } catch (e) {
-        print('Zimmet dönüştürme hatası: $e');
-        return null;
+      // Token'ı kaydet
+      if (data['token'] != null) {
+        await saveToken(data['token']);
       }
-    }).whereType<Inventory>().toList();
-    
-    // İşçiye ait zimmetleri filtrele
-    return allInventory.where((i) => i.workerId == workerId).toList();
-  }
-  
-  // Malzemeciye ait zimmetleri getir
-  Future<List<Inventory>> getSupplierInventory(String supplierId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final inventoryString = prefs.getString(_inventoryKey) ?? '[]';
-    
-    final List<dynamic> inventoryJson = json.decode(inventoryString);
-    
-    // Tüm zimmetleri oluştur
-    final allInventory = inventoryJson.map((i) {
-      try {
-        return Inventory.fromJson(i as Map<String, dynamic>);
-      } catch (e) {
-        print('Zimmet dönüştürme hatası: $e');
-        return null;
-      }
-    }).whereType<Inventory>().toList();
-    
-    // Malzemeciye ait zimmetleri filtrele
-    return allInventory.where((i) => i.supplierId == supplierId).toList();
+      
+      return User.fromJson(data['data']);
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
   }
   
   // Kullanıcı çıkışı
   Future<void> logout() async {
+    await deleteToken();
+  }
+  
+  // Kullanıcı profili alma
+  Future<User> getUserProfile() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      // Sadece oturum durumunu false yap, verileri silme
-      await prefs.setBool('is_logged_in', false);
-      print('Kullanıcı çıkışı yapıldı');
-    } catch (e) {
-      print('Çıkış yapılırken hata: $e');
-      rethrow;
+      final response = await _dio.get('/users/profile');
+      return User.fromJson(response.data['data']);
+    } on DioException catch (e) {
+      throw _formatError(e);
     }
   }
   
-  // Belirli bir işçinin zimmetlerini getir
-  Future<Map<String, dynamic>> getWorkerInventories(String workerId) async {
+  // Kendi hesabını silme
+  Future<void> deleteAccount() async {
     try {
-      print('İşçi için zimmetler getiriliyor. İşçi ID: $workerId');
+      await _dio.delete('/users/delete');
+      await deleteToken();
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // Başka bir kullanıcıyı silme (puantajcı için)
+  Future<void> deleteUser(String userId) async {
+    try {
+      await _dio.delete('/users/delete/$userId');
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // Kullanıcı profilini güncelleme
+  Future<User> updateProfile({
+    String? name,
+    String? surname,
+    String? email,
+  }) async {
+    try {
+      final response = await _dio.put(
+        '/users/update',
+        data: {
+          if (name != null) 'name': name,
+          if (surname != null) 'surname': surname,
+          if (email != null) 'email': email,
+        },
+      );
       
-      // Tüm zimmetleri al
-      final allInventories = await getAllInventories();
-      print('Toplam zimmet sayısı: ${allInventories.length}');
+      return User.fromJson(response.data['data']);
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // Şifre güncelleme
+  Future<void> updatePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      await _dio.put(
+        '/users/update-password',
+        data: {
+          'currentPassword': currentPassword,
+          'newPassword': newPassword,
+        },
+      );
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // Tüm kullanıcıları getir (puantajcı için)
+  Future<List<User>> getAllUsers() async {
+    try {
+      final response = await _dio.get('/users');
       
-      // Bu işçiye ait zimmetleri filtrele
-      final workerInventories = allInventories.where((inv) => inv.workerId == workerId).toList();
-      print('İşçiye ait zimmet sayısı: ${workerInventories.length}');
+      final List<dynamic> userList = response.data['data'];
+      return userList.map((user) => User.fromJson(user)).toList();
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // Puantaj kaydı oluştur
+  Future<Puantaj> createPuantaj({
+    required String isciId,
+    required String baslangicSaati,
+    required String bitisSaati,
+    required double calismaSuresi,
+    required String projeId,
+    required String projeBilgisi,
+    String? aciklama,
+    DateTime? tarih,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/puantaj',
+        data: {
+          'isciId': isciId,
+          'baslangicSaati': baslangicSaati,
+          'bitisSaati': bitisSaati,
+          'calismaSuresi': calismaSuresi,
+          'projeId': projeId,
+          'projeBilgisi': projeBilgisi,
+          if (aciklama != null) 'aciklama': aciklama,
+          if (tarih != null) 'tarih': tarih.toIso8601String(),
+        },
+      );
       
-      return {
-        'success': true,
-        'data': {
-          'inventories': workerInventories.map((inv) => inv.toJson()).toList(),
+      return Puantaj.fromJson(response.data['data']);
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // Puantaj kaydı güncelle
+  Future<Puantaj> updatePuantaj({
+    required String puantajId,
+    String? baslangicSaati,
+    String? bitisSaati,
+    double? calismaSuresi,
+    String? projeId,
+    String? projeBilgisi,
+    String? aciklama,
+    String? durum,
+  }) async {
+    try {
+      final response = await _dio.put(
+        '/puantaj/$puantajId',
+        data: {
+          if (baslangicSaati != null) 'baslangicSaati': baslangicSaati,
+          if (bitisSaati != null) 'bitisSaati': bitisSaati,
+          if (calismaSuresi != null) 'calismaSuresi': calismaSuresi,
+          if (projeId != null) 'projeId': projeId,
+          if (projeBilgisi != null) 'projeBilgisi': projeBilgisi,
+          if (aciklama != null) 'aciklama': aciklama,
+          if (durum != null) 'durum': durum,
+        },
+      );
+      
+      return Puantaj.fromJson(response.data['data']);
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // Puantaj kaydı sil
+  Future<void> deletePuantaj(String puantajId) async {
+    try {
+      await _dio.delete('/puantaj/$puantajId');
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // İşçinin puantaj kayıtlarını getir
+  Future<List<Puantaj>> getIsciPuantajlari(String isciId) async {
+    try {
+      final response = await _dio.get('/puantaj/isci/$isciId');
+      
+      final List<dynamic> puantajList = response.data['data'];
+      return puantajList.map((puantaj) => Puantaj.fromJson(puantaj)).toList();
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // Puantajcının tüm puantaj kayıtlarını getir
+  Future<List<Puantaj>> getPuantajciPuantajlari() async {
+    try {
+      final response = await _dio.get('/puantaj/puantajci');
+      
+      final List<dynamic> puantajList = response.data['data'];
+      return puantajList.map((puantaj) => Puantaj.fromJson(puantaj)).toList();
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // Zimmet oluştur
+  Future<Zimmet> createZimmet({
+    required String supervisorId,
+    required String supplierId,
+    required String workerId,
+    required String itemName,
+    required int quantity,
+    required String date,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/zimmet',
+        data: {
+          'supervisorId': supervisorId,
+          'supplierId': supplierId,
+          'workerId': workerId,
+          'itemName': itemName,
+          'quantity': quantity,
+          'date': date,
+        },
+      );
+      
+      return Zimmet.fromJson(response.data['data']);
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // Zimmet listesini getir
+  Future<List<Zimmet>> getZimmetler() async {
+    try {
+      final response = await _dio.get('/zimmet');
+      
+      final List<dynamic> zimmetList = response.data['data'];
+      return zimmetList.map((zimmet) => Zimmet.fromJson(zimmet)).toList();
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // İşçinin zimmetlerini getir
+  Future<List<Zimmet>> getIsciZimmetleri(String workerId) async {
+    try {
+      final response = await _dio.get('/zimmet/isci/$workerId');
+      
+      final List<dynamic> zimmetList = response.data['data'];
+      return zimmetList.map((zimmet) => Zimmet.fromJson(zimmet)).toList();
+    } on DioException catch (e) {
+      throw _formatError(e);
+    }
+  }
+  
+  // Bir DioException'ı kullanıcı dostu hata mesajına dönüştür
+  String _formatError(DioException e) {
+    if (e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.receiveTimeout ||
+        e.type == DioExceptionType.sendTimeout) {
+      return 'Bağlantı zaman aşımına uğradı. Lütfen internet bağlantınızı kontrol edin.';
+    } else if (e.type == DioExceptionType.badResponse) {
+      final statusCode = e.response?.statusCode;
+      final responseData = e.response?.data;
+      
+      if (statusCode == 401) {
+        return 'Oturum süreniz dolmuş. Lütfen tekrar giriş yapın.';
+      } else if (statusCode == 403) {
+        return 'Bu işlem için yetkiniz bulunmuyor.';
+      } else if (statusCode == 404) {
+        return 'İstenilen kaynak bulunamadı.';
+      } else if (statusCode == 400) {
+        if (responseData is Map && responseData['message'] != null) {
+          return responseData['message'];
         }
-      };
-    } catch (e) {
-      print('İşçi zimmetleri getirme hatası: $e');
-      return {
-        'success': false,
-        'error': e.toString(),
-      };
-    }
-  }
-
-  // İşçi koduna göre zimmetleri getir (giriş yapmış işçi için)
-  Future<Map<String, dynamic>> getCurrentWorkerInventories() async {
-    try {
-      // Giriş yapmış işçinin bilgilerini al
-      final userData = await getUserData();
-      if (userData == null) {
-        throw Exception('Kullanıcı verileri bulunamadı');
+        return 'Geçersiz istek. Lütfen bilgileri kontrol edin.';
+      } else {
+        return 'Sunucu hatası: ${responseData?['message'] ?? 'Bilinmeyen hata'}';
       }
-      
-      if (userData['role'] != 'worker') {
-        throw Exception('Bu işlem sadece işçi rolü için geçerlidir');
-      }
-      
-      final workerId = userData['id'] as String;
-      print('Giriş yapan işçi için zimmetler getiriliyor. İşçi ID: $workerId');
-      
-      // İşçinin zimmetlerini getir
-      return await getWorkerInventories(workerId);
-    } catch (e) {
-      print('Giriş yapan işçi için zimmet getirme hatası: $e');
-      return {
-        'success': false,
-        'error': e.toString(),
-      };
+    } else if (e.type == DioExceptionType.connectionError) {
+      return 'İnternet bağlantısı yok. Lütfen bağlantınızı kontrol edin.';
+    } else {
+      return 'Bir hata oluştu: ${e.message}';
     }
-  }
-
-  // Tüm zimmetleri getir
-  Future<List<Inventory>> getAllInventories() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final inventoriesString = prefs.getString('inventories_data') ?? '[]';
-      
-      // JSON verisini parse et
-      final List<dynamic> inventoriesJson = json.decode(inventoriesString);
-      
-      // Inventory nesnelerini oluştur
-      final inventories = inventoriesJson
-          .map((json) => Inventory.fromJson(json as Map<String, dynamic>))
-          .toList();
-      
-      return inventories;
-    } catch (e) {
-      print('Zimmet verileri getirme hatası: $e');
-      return [];
-    }
-  }
-  
-  // Zimmet verilerini kaydet
-  Future<void> _saveInventoriesData(List<Inventory> inventories) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final inventoriesJson = inventories.map((inv) => inv.toJson()).toList();
-      await prefs.setString('inventories_data', json.encode(inventoriesJson));
-      print('Zimmet verileri kaydedildi: ${inventories.length} zimmet');
-    } catch (e) {
-      print('Zimmet verileri kaydetme hatası: $e');
-      throw Exception('Zimmet verileri kaydedilemedi: $e');
-    }
-  }
-
-  // Rastgele bir ID oluşturma
-  String _generateRandomId() {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    final random = Random();
-    final id = String.fromCharCodes(
-      Iterable.generate(
-        20, // ID uzunluğu
-        (_) => chars.codeUnitAt(random.nextInt(chars.length)),
-      ),
-    );
-    return id;
   }
 } 

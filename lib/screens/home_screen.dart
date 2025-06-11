@@ -1,229 +1,237 @@
 import 'package:flutter/material.dart';
-import 'package:iskele360v7/screens/worker/add_worker_screen.dart';
-import 'package:iskele360v7/screens/worker/workers_list_screen.dart';
-import 'package:iskele360v7/services/api_service.dart';
+import 'package:provider/provider.dart';
+import 'package:iskele360v7/providers/auth_provider.dart';
+import 'package:iskele360v7/utils/constants.dart';
+import 'package:iskele360v7/widgets/supervisor_home.dart';
+import 'package:iskele360v7/widgets/worker_home.dart';
+import 'package:iskele360v7/widgets/supplier_home.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  final ApiService _apiService = ApiService();
-  Map<String, dynamic>? _userData;
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadUserData();
-  }
-
-  Future<void> _loadUserData() async {
-    try {
-      final userData = await _apiService.getUserData();
-      setState(() {
-        _userData = userData;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _logout() async {
-    await _apiService.clearAuthData();
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, '/login');
-    }
-  }
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    final authProvider = Provider.of<AuthProvider>(context);
+    final user = authProvider.currentUser;
+
+    if (user == null) {
+      // Kullanıcı bilgisi alınamadıysa login ekranına yönlendir
+      Future.microtask(() => Navigator.pushReplacementNamed(context, '/login'));
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
+    // Kullanıcı rolüne göre uygun ana ekranı göster
     return Scaffold(
       appBar: AppBar(
-        title: const Text('İskele 360'),
+        title: Text('${AppConstants.appName} - ${_getRoleTitle(user.role)}'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.person),
+            onPressed: () {
+              Navigator.pushNamed(context, '/profile');
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: _logout,
-            tooltip: 'Çıkış Yap',
+            onPressed: () {
+              _showLogoutDialog(context);
+            },
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Puantajcı Bilgileri',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const Divider(),
-                    const SizedBox(height: 8),
-                    _buildInfoRow('Ad', _userData?['name'] ?? '-'),
-                    _buildInfoRow('Soyad', _userData?['surname'] ?? '-'),
-                    _buildInfoRow('E-posta', _userData?['email'] ?? '-'),
-                  ],
-                ),
-              ),
+      body: _buildHomeContent(user.role),
+      drawer: _buildDrawer(context, user.role),
+    );
+  }
+
+  String _getRoleTitle(String role) {
+    switch (role) {
+      case 'supervisor':
+        return 'Puantajcı';
+      case 'isci':
+        return 'İşçi';
+      case 'supplier':
+        return 'Malzemeci';
+      default:
+        return 'Kullanıcı';
+    }
+  }
+
+  Widget _buildHomeContent(String role) {
+    switch (role) {
+      case 'supervisor':
+        return const SupervisorHome();
+      case 'isci':
+        return const WorkerHome();
+      case 'supplier':
+        return const SupplierHome();
+      default:
+        return const Center(
+          child: Text('Rolünüz için uygun bir ekran bulunamadı.'),
+        );
+    }
+  }
+
+  Widget _buildDrawer(BuildContext context, String role) {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(
+              color: Colors.blue,
             ),
-            const SizedBox(height: 24),
-            Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: _buildActionCard(
-                    'İşçi Ekle',
-                    Icons.person_add,
-                    Colors.blue,
-                    () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const AddWorkerScreen(),
-                        ),
-                      );
-                    },
+                const Icon(
+                  Icons.business,
+                  size: 60,
+                  color: Colors.white,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  AppConstants.appName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildActionCard(
-                    'Malzemeci Ekle',
-                    Icons.engineering,
-                    Colors.orange,
-                    () {
-                      // TODO: Malzemeci ekleme sayfasına yönlendir
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Malzemeci ekleme özelliği yakında eklenecek'),
-                        ),
-                      );
-                    },
+                Text(
+                  _getRoleTitle(role),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildActionCard(
-                    'İşçilerim',
-                    Icons.people,
-                    Colors.green,
-                    () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const WorkersListScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildActionCard(
-                    'Malzemecilerim',
-                    Icons.handyman,
-                    Colors.purple,
-                    () {
-                      // TODO: Malzemeciler listesi sayfasına yönlendir
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Malzemeci listesi özelliği yakında eklenecek'),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
+          ),
+          // Tüm roller için ortak menü öğeleri
+          ListTile(
+            leading: const Icon(Icons.home),
+            title: const Text('Ana Sayfa'),
+            onTap: () {
+              Navigator.pop(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.person),
+            title: const Text('Profil'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/profile');
+            },
+          ),
+          const Divider(),
+          // Role özel menü öğeleri
+          if (role == 'supervisor') ...[
+            ListTile(
+              leading: const Icon(Icons.people),
+              title: const Text('İşçi Yönetimi'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/workers');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.calendar_today),
+              title: const Text('Puantaj Yönetimi'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/puantaj');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.inventory),
+              title: const Text('Malzemeci Yönetimi'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/suppliers');
+              },
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              '$label:',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-              ),
+          if (role == 'isci') ...[
+            ListTile(
+              leading: const Icon(Icons.calendar_today),
+              title: const Text('Puantajlarım'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/worker-puantaj');
+              },
             ),
-          ),
-          Expanded(
-            child: Text(value),
+            ListTile(
+              leading: const Icon(Icons.inventory),
+              title: const Text('Zimmetlerim'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/worker-zimmet');
+              },
+            ),
+          ],
+          if (role == 'supplier') ...[
+            ListTile(
+              leading: const Icon(Icons.category),
+              title: const Text('Malzeme Yönetimi'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/malzeme');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.assignment),
+              title: const Text('Zimmet Yönetimi'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/zimmet');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.people),
+              title: const Text('İşçi Listesi'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/supplier-workers');
+              },
+            ),
+          ],
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: const Text('Çıkış Yap'),
+            onTap: () {
+              Navigator.pop(context);
+              _showLogoutDialog(context);
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget _buildActionCard(
-    String title,
-    IconData icon,
-    Color color,
-    VoidCallback onTap,
-  ) {
-    return Card(
-      elevation: 4,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(4),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 48,
-                color: color,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
+  void _showLogoutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Çıkış Yap'),
+        content: const Text('Hesabınızdan çıkış yapmak istediğinize emin misiniz?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
           ),
-        ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Provider.of<AuthProvider>(context, listen: false).logout();
+              Navigator.pushReplacementNamed(context, '/login');
+            },
+            child: const Text('Çıkış Yap'),
+          ),
+        ],
       ),
     );
   }

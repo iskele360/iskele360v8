@@ -4,81 +4,78 @@ const bcrypt = require('bcryptjs');
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: [true, 'İsim alanı zorunludur'],
+    required: true,
     trim: true
   },
   surname: {
     type: String,
-    required: [true, 'Soyisim alanı zorunludur'],
+    required: true,
     trim: true
-  },
-  code: {
-    type: String,
-    unique: true,
-    sparse: true
   },
   email: {
     type: String,
+    required: true,
     unique: true,
-    required: [true, 'Email alanı zorunludur'],
-    lowercase: true,
-    trim: true
+    trim: true,
+    lowercase: true
   },
   password: {
     type: String,
-    required: [true, 'Şifre alanı zorunludur'],
-    minlength: 6,
-    select: false
+    required: true,
+    minlength: 6
   },
   role: {
     type: String,
-    enum: ['puantajci', 'isci', 'malzemeci'],
-    default: 'puantajci'
+    enum: ['admin', 'puantajcı', 'isci', 'malzemeci'],
+    default: 'puantajcı'
   },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    default: null
+  code: {
+    type: String,
+    trim: true
   },
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  supervisorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }
+}, {
+  timestamps: true
+});
+
+// Şifre hashleme middleware
+userSchema.pre('save', async function(next) {
+  const user = this;
+  
+  // Şifre değiştirilmemişse veya yeni kullanıcı değilse
+  if (!user.isModified('password')) return next();
+  
+  try {
+    // Hash şifre
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(user.password, salt);
+    next();
+  } catch (error) {
+    next(error);
   }
 });
 
-// Şifreyi hash'leme
-userSchema.pre('save', async function(next) {
-  // Şifre değiştirilmemişse hash'leme işlemini atla
-  if (!this.isModified('password')) return next();
-  
-  // Şifreyi hash'le
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
-});
+// Şifre karşılaştırma metodu
+userSchema.methods.comparePassword = async function(candidatePassword) {
+  return bcrypt.compare(candidatePassword, this.password);
+};
 
-// 10 haneli otomatik kod oluşturma (işçi ve malzemeci için)
-userSchema.pre('save', async function(next) {
-  // Sadece yeni oluşturulan işçi ve malzemeci için kod oluştur
-  if (this.isNew && (this.role === 'isci' || this.role === 'malzemeci')) {
-    // 10 haneli rastgele kod oluştur
-    let code;
-    let codeExists = true;
-    
-    while (codeExists) {
-      code = Math.floor(1000000000 + Math.random() * 9000000000).toString();
-      const existingUser = await mongoose.model('User').findOne({ code });
-      codeExists = !!existingUser;
-    }
-    
-    this.code = code;
-  }
-  
-  next();
-});
-
-// Şifre doğrulama metodu
-userSchema.methods.correctPassword = async function(candidatePassword, userPassword) {
-  return await bcrypt.compare(candidatePassword, userPassword);
+// Kullanıcının güvenli bilgilerini döndüren metod
+userSchema.methods.toJSON = function() {
+  const user = this.toObject();
+  delete user.password;
+  return user;
 };
 
 const User = mongoose.model('User', userSchema);

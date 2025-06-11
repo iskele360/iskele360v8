@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:iskele360v7/providers/auth_provider.dart';
 import 'package:iskele360v7/services/api_service.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -46,15 +48,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
       });
 
       try {
-        await _apiService.registerSupervisor(
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        
+        await authProvider.register(
           name: _nameController.text,
           surname: _surnameController.text,
           email: _emailController.text,
           password: _passwordController.text,
+          role: 'supervisor',
         );
 
         if (mounted) {
-          Navigator.pushReplacementNamed(context, '/home');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Kayıt başarılı! Giriş yapabilirsiniz.')),
+          );
+          Navigator.pushReplacementNamed(context, '/login');
         }
       } catch (e) {
         setState(() {
@@ -73,6 +81,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Puantajcı Kaydı'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -97,6 +107,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Ad',
                   border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -113,6 +124,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Soyad',
                   border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -129,6 +141,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 decoration: const InputDecoration(
                   labelText: 'E-posta',
                   border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.email),
                 ),
                 keyboardType: TextInputType.emailAddress,
                 validator: (value) {
@@ -149,6 +162,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Şifre',
                   border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.lock),
                 ),
                 obscureText: true,
                 validator: (value) {
@@ -169,6 +183,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Şifre (Tekrar)',
                   border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.lock),
                 ),
                 obscureText: true,
                 validator: (value) {
@@ -181,24 +196,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
               
               const SizedBox(height: 24),
               
-              ElevatedButton(
+              ElevatedButton.icon(
                 onPressed: _isLoading ? null : _register,
-                child: _isLoading
+                icon: const Icon(Icons.person_add),
+                label: _isLoading
                     ? const SizedBox(
                         height: 20,
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Text('Kayıt Ol'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
               ),
               
               const SizedBox(height: 16),
               
-              TextButton(
+              TextButton.icon(
                 onPressed: () {
                   Navigator.pop(context);
                 },
-                child: const Text('Zaten hesabınız var mı? Giriş yapın'),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Giriş ekranına dön'),
               ),
             ],
           ),

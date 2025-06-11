@@ -302,6 +302,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   fontSize: 14,
                 ),
                 textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
               ),
             ],
           ),
