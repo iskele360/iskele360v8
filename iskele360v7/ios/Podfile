@@ -1,0 +1,24 @@
+platform :ios, '13.0' # << iOS 13.0 yaptık
+
+use_frameworks!
+use_modular_headers!
+
+target 'Runner' do
+  flutter_application_path = '../'
+  load File.join(flutter_application_path, '.ios', 'Flutter', 'podhelper.rb')
+
+  install_all_flutter_pods(flutter_application_path)
+
+  pod 'Firebase/Core'
+  pod 'Firebase/Auth'
+  pod 'Firebase/Firestore'
+end
+
+# ✅ BoringSSL-GRPC hatasını çözen ekleme:
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
+    end
+  end
+end

@@ -1,0 +1,43 @@
+# Memory Rules File
+
+Proje Bağlamı: Puantajcı, İşçi ve Malzemeci Panel Sistemi
+Bu sistem, her biri kendi paneline ve belirli işlevlere sahip üç farklı kullanıcı rolünü içermektedir:
+
+1. Puantajcı Paneli (Yönetici/Zaman Takipçi)
+
+Hesap Oluşturma ve Giriş:
+Puantajcı kullanıcılar kendi panellerine kayıt olabilir ve giriş yapabilirler.
+İşçi Yönetimi:
+Puantajcı, yeni İşçi (çalışan) hesapları oluşturabilir.
+İşçi oluşturmak için zorunlu bilgiler:
+Ad
+Soyad
+6 haneli otomatik kod (Bu kod sistem tarafından otomatik olarak oluşturulur ve İşçi'nin giriş kimliği olarak kullanılır).
+Malzemeci Yönetimi:
+Puantajcı, yeni Malzemeci (malzeme yöneticisi) hesapları oluşturabilir.
+Malzemeci oluşturmak için zorunlu bilgiler:
+Ad
+Soyad
+Kod (Bu kod da giriş için kullanılacak bir kimliktir, İşçi'deki 6 haneli otomatik kod gibi benzersiz olmalıdır).
+Puantaj Oluşturma:
+Puantajcı, İşçiler için ayrı puantaj kayıtları oluşturur.
+Puantajcı, Malzemeciler için ayrı puantaj kayıtları oluşturur.
+Bu puantaj kayıtları, ilgili İşçi veya Malzemeci tarafından kendi panellerinde görülebilir.
+2. İşçi Paneli (Çalışan)
+
+Giriş:
+İşçi kullanıcılar, Puantajcı tarafından kendilerine verilen 6 haneli otomatik kodu kullanarak giriş yaparlar.
+Puantaj Görüntüleme:
+Giriş yaptıktan sonra, bir İşçi, Puantajcı tarafından kendisi için özel olarak oluşturulan puantaj kayıtlarını görüntüleyebilir.
+Zimmet Görüntüleme:
+Bir İşçi, Malzemeci'nin kendisi için oluşturduğu ve ilişkilendirdiği zimmet kayıtlarını (atanan malzeme/varlıklar) görüntüleyebilir.
+3. Malzemeci Paneli (Malzeme Yöneticisi)
+
+Giriş:
+Malzemeci kullanıcılar, Puantajcı tarafından kendilerine verilen kodu kullanarak giriş yaparlar.
+İşçi Listesi Görüntüleme:
+Giriş yaptıktan sonra, bir Malzemeci yalnızca, kendisini oluşturan Puantajcı tarafından oluşturulan İşçi listesini görebilir.
+Zimmet Oluşturma (Varlık Atama):
+Görüntüleyebildiği İşçi listesini kullanarak, Malzemeci belirli İşçilere zimmet kayıtları (malzeme/varlık ataması) oluşturabilir.
+Puantaj Görüntüleme:
+Bir Malzemeci, Puantajcı'nın kendisi için özel olarak oluşturduğu puantaj kayıtlarını da görüntüleyebilir.
