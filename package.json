@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "build": "npm install",
+    "start": "node backend/src/index.js"
+  },
   "dependencies": {
     "socket.io": "^4.8.1"
   }
