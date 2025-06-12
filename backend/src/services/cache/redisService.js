@@ -27,12 +27,19 @@ const initRedis = async () => {
     return;
   }
 
+  console.log('Redis bağlantı ayarları:', {
+    url: REDIS_URL,
+    enabled: REDIS_ENABLED
+  });
+
   try {
     redisClient = redis.createClient({
       url: REDIS_URL,
       socket: {
-        connectTimeout: 10000, // 10 saniye
-        reconnectStrategy: (retries) => Math.min(retries * 50, 3000) // Exponential backoff
+        tls: true,
+        rejectUnauthorized: false, // Render'ın self-signed sertifikası için
+        connectTimeout: 10000,
+        reconnectStrategy: (retries) => Math.min(retries * 50, 3000)
       }
     });
 
@@ -47,7 +54,7 @@ const initRedis = async () => {
     });
 
     redisClient.on('error', (err) => {
-      console.error('Redis bağlantı hatası:', err.message);
+      console.error('Redis bağlantı hatası:', err.message, '\nHata detayı:', err);
       redisConnected = false;
     });
 
@@ -61,13 +68,19 @@ const initRedis = async () => {
     });
 
     // Bağlantıyı aç
+    console.log('Redis bağlantısı açılıyor...');
     await redisClient.connect();
 
     // Bağlantıyı test et
+    console.log('Redis ping testi yapılıyor...');
     await redisClient.ping();
     console.log('Redis sunucusu ile iletişim başarılı');
   } catch (err) {
-    console.error('Redis bağlantısı kurulamadı:', err.message);
+    console.error('Redis bağlantısı kurulamadı. Hata:', {
+      message: err.message,
+      stack: err.stack,
+      code: err.code
+    });
     console.log('In-memory cache fallback kullanılıyor');
     redisConnected = false;
   }
