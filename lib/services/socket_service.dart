@@ -1,203 +1,166 @@
-import 'dart:async';
-import 'dart:convert';
-
+import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/foundation.dart';
-import 'package:iskele360v7/models/models.dart';
 import 'package:iskele360v7/utils/constants.dart';
-import 'package:logger/logger.dart';
-import 'package:socket_io_client/socket_io_client.dart' as io;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
-  
+  late IO.Socket socket;
+  bool isConnected = false;
+
   factory SocketService() {
     return _instance;
   }
-  
-  // Socket istemcisi
-  io.Socket? _socket;
-  
-  // Logger
-  final Logger _logger = Logger();
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
-  
-  // Event stream controllers
-  final StreamController<Puantaj> _puantajCreatedController = StreamController<Puantaj>.broadcast();
-  final StreamController<Puantaj> _puantajUpdatedController = StreamController<Puantaj>.broadcast();
-  final StreamController<Zimmet> _zimmetCreatedController = StreamController<Zimmet>.broadcast();
-  final StreamController<bool> _connectionStatusController = StreamController<bool>.broadcast();
-  
-  // Event streams
-  Stream<Puantaj> get onPuantajCreated => _puantajCreatedController.stream;
-  Stream<Puantaj> get onPuantajUpdated => _puantajUpdatedController.stream;
-  Stream<Zimmet> get onZimmetCreated => _zimmetCreatedController.stream;
-  Stream<bool> get connectionStatus => _connectionStatusController.stream;
-  
-  // Bağlantı durumu
-  bool _isConnected = false;
-  bool get isConnected => _isConnected;
-  
+
   SocketService._internal();
-  
-  // Socket bağlantısını başlat
-  Future<void> initSocket() async {
-    if (_socket != null) {
-      _socket!.disconnect();
-      _socket = null;
-    }
-    
-    try {
-      // Token'ı secure storage'dan oku
-      final token = await _secureStorage.read(key: AppConstants.tokenKey);
-      
-      if (token == null) {
-        _logger.w('Socket bağlantısı başlatılamadı: Token bulunamadı');
-        return;
+
+  void init() {
+    socket = IO.io(AppConstants.socketUrl, <String, dynamic>{
+      'transports': ['websocket'],
+      'autoConnect': true,
+      'reconnection': true,
+      'reconnectionDelay': 1000,
+      'reconnectionDelayMax': 5000,
+      'reconnectionAttempts': 5,
+      'forceNew': true,
+      'timeout': 10000,
+      'extraHeaders': {
+        'Access-Control-Allow-Origin': '*',
       }
-      
-      _socket = io.io(
-        AppConstants.socketUrl,
-        io.OptionBuilder()
-            .setTransports(['websocket'])
-            .disableAutoConnect()
-            .setAuth({'token': token})
-            .setReconnectionAttempts(5)
-            .setReconnectionDelay(5000)
-            .enableReconnection()
-            .enableForceNew()
-            .build(),
-      );
-      
-      _setupSocketListeners();
-      _socket!.connect();
-      
-      _logger.i('Socket bağlantı başlatıldı');
-    } catch (e) {
-      _logger.e('Socket bağlantısı başlatılırken hata: $e');
-    }
+    });
+
+    _setupSocketListeners();
+    _setupPuantajListeners();
   }
-  
-  // Socket dinleyicilerini ayarla
+
+  // Puantaj olayları için callback'ler
+  Function(dynamic)? _onPuantajCreatedCallback;
+  Function(dynamic)? _onPuantajUpdatedCallback;
+
+  // Puantaj olaylarını dinle
+  void onPuantajCreated(Function(dynamic) callback) {
+    _onPuantajCreatedCallback = callback;
+  }
+
+  void onPuantajUpdated(Function(dynamic) callback) {
+    _onPuantajUpdatedCallback = callback;
+  }
+
+  void _setupPuantajListeners() {
+    socket.on(AppConstants.socketEventPuantajCreated, (data) {
+      if (kDebugMode) {
+        print('Yeni puantaj oluşturuldu: $data');
+      }
+      if (_onPuantajCreatedCallback != null) {
+        _onPuantajCreatedCallback!(data);
+      }
+    });
+
+    socket.on(AppConstants.socketEventPuantajUpdated, (data) {
+      if (kDebugMode) {
+        print('Puantaj güncellendi: $data');
+      }
+      if (_onPuantajUpdatedCallback != null) {
+        _onPuantajUpdatedCallback!(data);
+      }
+    });
+  }
+
+  // Puantaj olaylarını emit et
+  void emitPuantajCreated(dynamic data) {
+    emit(AppConstants.socketEventPuantajCreated, data);
+  }
+
+  void emitPuantajUpdated(dynamic data) {
+    emit(AppConstants.socketEventPuantajUpdated, data);
+  }
+
   void _setupSocketListeners() {
-    _socket!.onConnect((_) {
-      _logger.i('Socket.IO bağlantısı kuruldu');
-      _isConnected = true;
-      _connectionStatusController.add(true);
+    socket.onConnect((_) {
+      if (kDebugMode) {
+        print('Socket bağlantısı kuruldu');
+      }
+      isConnected = true;
     });
-    
-    _socket!.onDisconnect((_) {
-      _logger.i('Socket.IO bağlantısı kesildi');
-      _isConnected = false;
-      _connectionStatusController.add(false);
+
+    socket.onDisconnect((_) {
+      if (kDebugMode) {
+        print('Socket bağlantısı kesildi');
+      }
+      isConnected = false;
+      // Yeniden bağlanmayı dene
+      Future.delayed(const Duration(seconds: 5), () {
+        if (!isConnected) {
+          reconnect();
+        }
+      });
     });
-    
-    _socket!.onConnectError((error) {
-      _logger.e('Socket.IO bağlantı hatası: $error');
-      _isConnected = false;
-      _connectionStatusController.add(false);
-    });
-    
-    _socket!.onError((error) {
-      _logger.e('Socket.IO hatası: $error');
-    });
-    
-    // Puantaj oluşturulduğunda
-    _socket!.on(AppConstants.socketEventPuantajCreated, (data) {
-      try {
-        final puantajData = data is String ? jsonDecode(data) : data;
-        final puantaj = Puantaj.fromJson(puantajData);
-        _puantajCreatedController.add(puantaj);
-        _logger.i('Yeni puantaj alındı: ${puantaj.id}');
-      } catch (e) {
-        _logger.e('Puantaj verisi işlenirken hata: $e');
+
+    socket.onError((error) {
+      if (kDebugMode) {
+        print('Socket hatası: $error');
       }
     });
-    
-    // Puantaj güncellendiğinde
-    _socket!.on(AppConstants.socketEventPuantajUpdated, (data) {
-      try {
-        final puantajData = data is String ? jsonDecode(data) : data;
-        final puantaj = Puantaj.fromJson(puantajData);
-        _puantajUpdatedController.add(puantaj);
-        _logger.i('Puantaj güncellendi: ${puantaj.id}');
-      } catch (e) {
-        _logger.e('Puantaj güncelleme verisi işlenirken hata: $e');
+
+    socket.onConnectError((error) {
+      if (kDebugMode) {
+        print('Socket bağlantı hatası: $error');
       }
-    });
-    
-    // Zimmet oluşturulduğunda
-    _socket!.on(AppConstants.socketEventZimmetCreated, (data) {
-      try {
-        final zimmetData = data is String ? jsonDecode(data) : data;
-        final zimmet = Zimmet.fromJson(zimmetData);
-        _zimmetCreatedController.add(zimmet);
-        _logger.i('Yeni zimmet alındı: ${zimmet.id}');
-      } catch (e) {
-        _logger.e('Zimmet verisi işlenirken hata: $e');
-      }
+      // Bağlantı hatası durumunda yeniden bağlanmayı dene
+      Future.delayed(const Duration(seconds: 5), () {
+        if (!isConnected) {
+          reconnect();
+        }
+      });
     });
   }
-  
-  // Odaya katılma (özel bildirimler için)
-  void joinRoom(String roomName) {
-    if (_socket != null && _isConnected) {
-      _socket!.emit('join_room', roomName);
-      _logger.i('Odaya katılındı: $roomName');
+
+  // Veri gönderme
+  void emit(String event, dynamic data) {
+    if (isConnected) {
+      socket.emit(event, data);
     } else {
-      _logger.w('Odaya katılınamadı: Socket bağlı değil');
+      if (kDebugMode) {
+        print('Socket bağlı değil, veri gönderilemedi: $event');
+      }
+      // Bağlı değilse yeniden bağlanmayı dene
+      reconnect();
     }
   }
-  
-  // Odadan ayrılma
-  void leaveRoom(String roomName) {
-    if (_socket != null && _isConnected) {
-      _socket!.emit('leave_room', roomName);
-      _logger.i('Odadan ayrılındı: $roomName');
-    }
+
+  // Veri dinleme
+  void on(String event, Function(dynamic) callback) {
+    socket.on(event, callback);
   }
-  
-  // Puantaj oluşturma olayı gönderme
-  void emitPuantajCreated(Puantaj puantaj) {
-    if (_socket != null && _isConnected) {
-      _socket!.emit(AppConstants.socketEventPuantajCreated, puantaj.toJson());
-      _logger.i('Puantaj oluşturma olayı gönderildi: ${puantaj.id}');
-    }
+
+  // Veri dinlemeyi durdurma
+  void off(String event) {
+    socket.off(event);
   }
-  
-  // Puantaj güncelleme olayı gönderme
-  void emitPuantajUpdated(Puantaj puantaj) {
-    if (_socket != null && _isConnected) {
-      _socket!.emit(AppConstants.socketEventPuantajUpdated, puantaj.toJson());
-      _logger.i('Puantaj güncelleme olayı gönderildi: ${puantaj.id}');
-    }
+
+  // Belirli bir odaya katılma
+  void joinRoom(String room) {
+    socket.emit('join', room);
   }
-  
-  // Zimmet oluşturma olayı gönderme
-  void emitZimmetCreated(Zimmet zimmet) {
-    if (_socket != null && _isConnected) {
-      _socket!.emit(AppConstants.socketEventZimmetCreated, zimmet.toJson());
-      _logger.i('Zimmet oluşturma olayı gönderildi: ${zimmet.id}');
-    }
+
+  // Belirli bir odadan ayrılma
+  void leaveRoom(String room) {
+    socket.emit('leave', room);
   }
-  
-  // Bağlantıyı kapat
-  void disconnect() {
-    if (_socket != null) {
-      _socket!.disconnect();
-      _socket = null;
-      _isConnected = false;
-      _connectionStatusController.add(false);
-      _logger.i('Socket bağlantısı kapatıldı');
-    }
-  }
-  
-  // Servisi temizle
+
+  // Bağlantıyı kapatma
   void dispose() {
-    disconnect();
-    _puantajCreatedController.close();
-    _puantajUpdatedController.close();
-    _zimmetCreatedController.close();
-    _connectionStatusController.close();
+    socket.dispose();
   }
-} 
+
+  // Yeniden bağlanma
+  void reconnect() {
+    if (!isConnected) {
+      socket.connect();
+    }
+  }
+
+  // Bağlantıyı kesme
+  void disconnect() {
+    socket.disconnect();
+  }
+}

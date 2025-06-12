@@ -1,10 +1,14 @@
-const cloudinary = require('cloudinary').v2;
-const dotenv = require('dotenv');
+import { v2 as cloudinary } from 'cloudinary';
+import dotenv from 'dotenv';
 
 dotenv.config();
 
 class CloudinaryService {
   constructor() {
+    this.init();
+  }
+
+  init() {
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
       api_key: process.env.CLOUDINARY_API_KEY,
@@ -12,180 +16,176 @@ class CloudinaryService {
     });
   }
 
-  async uploadImage(file, folder = 'iskele360') {
+  // Upload a file to Cloudinary
+  async uploadFile(file, folder = 'iskele360') {
     try {
-      const result = await cloudinary.uploader.upload(file, {
-        folder: folder,
+      const result = await cloudinary.uploader.upload(file.path, {
+        folder,
         resource_type: 'auto',
-        allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
-        transformation: [
-          { width: 1000, crop: 'limit' },
-          { quality: 'auto' },
-          { fetch_format: 'auto' }
-        ]
+        allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx'],
+        transformation: {
+          quality: 'auto:good',
+          fetch_format: 'auto'
+        }
       });
 
       return {
         url: result.secure_url,
         publicId: result.public_id,
-        width: result.width,
-        height: result.height,
         format: result.format,
-        resourceType: result.resource_type
-      };
-    } catch (error) {
-      console.error('Cloudinary upload hatası:', error);
-      throw new Error('Dosya yükleme hatası');
-    }
-  }
-
-  async uploadMultipleImages(files, folder = 'iskele360') {
-    try {
-      const uploadPromises = files.map(file => this.uploadImage(file, folder));
-      return await Promise.all(uploadPromises);
-    } catch (error) {
-      console.error('Cloudinary çoklu yükleme hatası:', error);
-      throw new Error('Dosyalar yüklenirken hata oluştu');
-    }
-  }
-
-  async deleteImage(publicId) {
-    try {
-      const result = await cloudinary.uploader.destroy(publicId);
-      return result.result === 'ok';
-    } catch (error) {
-      console.error('Cloudinary silme hatası:', error);
-      throw new Error('Dosya silinirken hata oluştu');
-    }
-  }
-
-  async deleteMultipleImages(publicIds) {
-    try {
-      const result = await cloudinary.api.delete_resources(publicIds);
-      return result.deleted;
-    } catch (error) {
-      console.error('Cloudinary çoklu silme hatası:', error);
-      throw new Error('Dosyalar silinirken hata oluştu');
-    }
-  }
-
-  getImageUrl(publicId, options = {}) {
-    try {
-      const transformation = {
-        width: options.width,
-        height: options.height,
-        crop: options.crop || 'fill',
-        quality: options.quality || 'auto',
-        fetch_format: options.format || 'auto'
-      };
-
-      return cloudinary.url(publicId, transformation);
-    } catch (error) {
-      console.error('Cloudinary URL oluşturma hatası:', error);
-      throw new Error('URL oluşturulurken hata oluştu');
-    }
-  }
-
-  async optimizeImage(publicId, options = {}) {
-    try {
-      const result = await cloudinary.uploader.explicit(publicId, {
-        type: 'upload',
-        transformation: [
-          { width: options.width || 'auto' },
-          { quality: options.quality || 'auto' },
-          { fetch_format: options.format || 'auto' },
-          { crop: options.crop || 'limit' }
-        ]
-      });
-
-      return {
-        url: result.secure_url,
-        publicId: result.public_id,
-        width: result.width,
-        height: result.height,
-        format: result.format,
-        resourceType: result.resource_type
-      };
-    } catch (error) {
-      console.error('Cloudinary optimizasyon hatası:', error);
-      throw new Error('Görsel optimize edilirken hata oluştu');
-    }
-  }
-
-  async createImageThumbnail(publicId, width = 150, height = 150) {
-    try {
-      const result = await cloudinary.uploader.explicit(publicId, {
-        type: 'upload',
-        transformation: [
-          { width: width, height: height, crop: 'fill' },
-          { quality: 'auto' },
-          { fetch_format: 'auto' }
-        ]
-      });
-
-      return {
-        url: result.secure_url,
-        publicId: result.public_id,
+        type: result.resource_type,
+        size: result.bytes,
         width: result.width,
         height: result.height
       };
     } catch (error) {
-      console.error('Cloudinary thumbnail oluşturma hatası:', error);
-      throw new Error('Thumbnail oluşturulurken hata oluştu');
+      console.error('❌ Cloudinary yükleme hatası:', error.message);
+      throw new Error('Dosya yükleme başarısız');
     }
   }
 
-  // Folder management
-  async createFolder(folderName) {
+  // Upload a profile image with specific transformations
+  async uploadProfileImage(file, userId) {
     try {
-      await cloudinary.api.create_folder(folderName);
-      return true;
-    } catch (error) {
-      console.error('Cloudinary klasör oluşturma hatası:', error);
-      throw new Error('Klasör oluşturulurken hata oluştu');
-    }
-  }
-
-  async deleteFolder(folderName) {
-    try {
-      await cloudinary.api.delete_folder(folderName);
-      return true;
-    } catch (error) {
-      console.error('Cloudinary klasör silme hatası:', error);
-      throw new Error('Klasör silinirken hata oluştu');
-    }
-  }
-
-  // Resource management
-  async getFolderResources(folderName) {
-    try {
-      const result = await cloudinary.api.resources({
-        type: 'upload',
-        prefix: folderName,
-        max_results: 500
+      const result = await cloudinary.uploader.upload(file.path, {
+        folder: 'iskele360/profiles',
+        public_id: `user_${userId}`,
+        overwrite: true,
+        resource_type: 'image',
+        allowed_formats: ['jpg', 'jpeg', 'png'],
+        transformation: [
+          { width: 400, height: 400, crop: 'fill', gravity: 'face' },
+          { quality: 'auto:good', fetch_format: 'auto' }
+        ]
       });
-      return result.resources;
+
+      return {
+        url: result.secure_url,
+        publicId: result.public_id,
+        format: result.format
+      };
     } catch (error) {
-      console.error('Cloudinary klasör içeriği alma hatası:', error);
-      throw new Error('Klasör içeriği alınırken hata oluştu');
+      console.error('❌ Cloudinary profil resmi yükleme hatası:', error.message);
+      throw new Error('Profil resmi yükleme başarısız');
     }
   }
 
-  async searchResources(query) {
+  // Upload multiple files
+  async uploadMultipleFiles(files, folder = 'iskele360') {
     try {
-      const result = await cloudinary.search
-        .expression(query)
-        .max_results(30)
-        .execute();
-      return result.resources;
+      const uploadPromises = files.map(file => this.uploadFile(file, folder));
+      const results = await Promise.all(uploadPromises);
+      
+      return results.map(result => ({
+        url: result.url,
+        publicId: result.publicId,
+        format: result.format,
+        type: result.type
+      }));
     } catch (error) {
-      console.error('Cloudinary arama hatası:', error);
-      throw new Error('Arama yapılırken hata oluştu');
+      console.error('❌ Cloudinary çoklu yükleme hatası:', error.message);
+      throw new Error('Çoklu dosya yükleme başarısız');
+    }
+  }
+
+  // Delete a file from Cloudinary
+  async deleteFile(publicId) {
+    try {
+      const result = await cloudinary.uploader.destroy(publicId);
+      return result.result === 'ok';
+    } catch (error) {
+      console.error('❌ Cloudinary dosya silme hatası:', error.message);
+      throw new Error('Dosya silme başarısız');
+    }
+  }
+
+  // Delete multiple files
+  async deleteMultipleFiles(publicIds) {
+    try {
+      const result = await cloudinary.api.delete_resources(publicIds);
+      return result.deleted;
+    } catch (error) {
+      console.error('❌ Cloudinary çoklu dosya silme hatası:', error.message);
+      throw new Error('Çoklu dosya silme başarısız');
+    }
+  }
+
+  // Generate a signed URL for secure file access
+  async generateSignedUrl(publicId, options = {}) {
+    try {
+      const defaultOptions = {
+        expireAt: Math.floor(Date.now() / 1000) + 3600, // 1 hour from now
+        ...options
+      };
+
+      const signedUrl = cloudinary.url(publicId, {
+        secure: true,
+        sign_url: true,
+        ...defaultOptions
+      });
+
+      return signedUrl;
+    } catch (error) {
+      console.error('❌ Cloudinary imzalı URL oluşturma hatası:', error.message);
+      throw new Error('İmzalı URL oluşturma başarısız');
+    }
+  }
+
+  // Create a zip archive of multiple files
+  async createArchive(publicIds, options = {}) {
+    try {
+      const defaultOptions = {
+        resource_type: 'image',
+        target_format: 'zip',
+        ...options
+      };
+
+      const result = await cloudinary.utils.download_zip_url({
+        public_ids: publicIds,
+        ...defaultOptions
+      });
+
+      return result;
+    } catch (error) {
+      console.error('❌ Cloudinary arşiv oluşturma hatası:', error.message);
+      throw new Error('Arşiv oluşturma başarısız');
+    }
+  }
+
+  // Get resource details
+  async getResourceInfo(publicId) {
+    try {
+      const result = await cloudinary.api.resource(publicId);
+      return {
+        url: result.secure_url,
+        publicId: result.public_id,
+        format: result.format,
+        type: result.resource_type,
+        size: result.bytes,
+        width: result.width,
+        height: result.height,
+        createdAt: result.created_at
+      };
+    } catch (error) {
+      console.error('❌ Cloudinary dosya bilgisi alma hatası:', error.message);
+      throw new Error('Dosya bilgisi alma başarısız');
+    }
+  }
+
+  // Update resource access mode
+  async updateAccessMode(publicId, accessMode) {
+    try {
+      const result = await cloudinary.api.update(publicId, {
+        access_mode: accessMode // 'public' or 'authenticated'
+      });
+      return result;
+    } catch (error) {
+      console.error('❌ Cloudinary erişim modu güncelleme hatası:', error.message);
+      throw new Error('Erişim modu güncelleme başarısız');
     }
   }
 }
 
-// Singleton instance
+// Create and export a singleton instance
 const cloudinaryService = new CloudinaryService();
-
-module.exports = cloudinaryService;
+export default cloudinaryService;

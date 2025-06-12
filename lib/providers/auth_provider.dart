@@ -1,579 +1,318 @@
-import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:iskele360v7/models/models.dart';
-import 'package:iskele360v7/services/services.dart';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:iskele360v7/models/user_model.dart';
-import 'package:iskele360v7/services/api_service.dart';
 import 'package:iskele360v7/services/socket_service.dart';
-import 'package:iskele360v7/utils/constants.dart';
-
-enum AuthStatus {
-  uninitialized, // Başlangıç durumu
-  authenticated, // Oturum açık
-  unauthenticated, // Oturum kapalı
-}
+import 'package:iskele360v7/services/cache_service.dart';
 
 class AuthProvider with ChangeNotifier {
-  final ApiService _apiService;
   final SocketService _socketService = SocketService();
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
-  
-  AuthStatus _status = AuthStatus.uninitialized;
-  User? _user;
-  String? _errorMessage;
+  final CacheService _cacheService = CacheService();
+  final _storage = const FlutterSecureStorage();
+
+  User? _currentUser;
   bool _isLoading = false;
-  
-  // Getters
-  AuthStatus get status => _status;
-  User? get user => _user;
-  User? get currentUser => _user;
-  String? get errorMessage => _errorMessage;
-  bool get isAuthenticated => _status == AuthStatus.authenticated;
+  String? _error;
+
+  User? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
-  String? get token => _user?.token;
-  String? get userRole => _user?.role;
-  
-  AuthProvider(this._apiService);
-  
-  // Başlangıçta token ve kullanıcı durumunu kontrol et
-  Future<void> checkAuthStatus() async {
-    try {
-      final savedToken = await _secureStorage.read(key: AppConstants.tokenKey);
-      final hasToken = savedToken != null && savedToken.isNotEmpty;
-      
-      if (hasToken) {
-        if (AppConstants.useMockApi) {
-          // Mock API için, token varsa demo kullanıcı oluştur
-          _user = User(
-            id: '1',
-            name: 'Demo',
-            surname: 'Kullanıcı',
-            email: 'demo@example.com',
-            role: AppConstants.roleSupervisor,
-            token: savedToken,
-            createdAt: DateTime.now(),
-          );
-          
-          _status = AuthStatus.authenticated;
-          notifyListeners();
-          return;
-        }
-        
-        // Token var, profil bilgilerini al
-        final user = await _apiService.getUserProfile();
-        _user = user;
-        _status = AuthStatus.authenticated;
-        
-        // WebSocket bağlantısını başlat
-        await _socketService.initSocket();
-        
-        // Kullanıcı verilerini güvenli depolamaya kaydet
-        await _saveUserData(user);
-      } else {
-        _status = AuthStatus.unauthenticated;
-      }
-    } catch (e) {
-      if (AppConstants.useMockApi) {
-        // Hata durumunda mock için sadece oturumu kapat
-        _status = AuthStatus.unauthenticated;
-      } else {
-        _status = AuthStatus.unauthenticated;
-        _errorMessage = e.toString();
-      }
-    }
-    
-    notifyListeners();
-  }
-  
-  // Email ile giriş (Puantajcı)
-  Future<bool> loginWithEmail(String email, String password) async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-    
-    try {
-      if (AppConstants.useMockApi) {
-        // API olmadığında demo kullanıcı ile giriş yap
-        await Future.delayed(const Duration(seconds: 1)); // Gerçek giriş hissi için kısa gecikme
-        
-        // Demo kullanıcı oluştur
-        _user = User(
-          id: '1',
-          name: 'Demo',
-          surname: 'Puantajcı',
-          email: email,
-          role: AppConstants.roleSupervisor,
-          token: 'demo_token_${DateTime.now().millisecondsSinceEpoch}',
-          createdAt: DateTime.now(),
-        );
-        
-        // Token'ı güvenli depolamaya kaydet
-        await _secureStorage.write(key: AppConstants.tokenKey, value: _user?.token);
-        
-        _status = AuthStatus.authenticated;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      }
-      
-      try {
-        // ApiService sınıfındaki yöntem kullanarak giriş yapmayı dene
-        final user = await _apiService.loginWithEmail(
-          email: email,
-          password: password,
-        );
-        
-        _user = user;
-        _status = AuthStatus.authenticated;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } catch (e) {
-        // Eğer doğrudan ApiService metodu çalışmazsa, manuel olarak API isteği yapalım
-        final response = await _apiService.post(
-          '/auth/login',
-          data: {'email': email, 'password': password},
-        );
-        
-        if (response.statusCode == 200) {
-          final data = response.data;
-          if (data['data'] != null) {
-            _user = User.fromJson(data['data']);
-            _user?.token = data['token'];
-            
-            // Token'ı güvenli depolamaya kaydet
-            await _secureStorage.write(key: AppConstants.tokenKey, value: _user?.token);
-            
-            _status = AuthStatus.authenticated;
-            _isLoading = false;
-            notifyListeners();
-            return true;
-          } else {
-            _errorMessage = 'Kullanıcı bilgileri alınamadı';
-            _isLoading = false;
-            notifyListeners();
-            return false;
-          }
-        } else {
-          _errorMessage = 'Giriş başarısız: ${response.data['message'] ?? 'Bilinmeyen hata'}';
-          _isLoading = false;
-          notifyListeners();
-          return false;
-        }
-      }
-    } catch (e) {
-      if (AppConstants.useMockApi) {
-        // Hata durumunda bile demo kullanıcı ile giriş yap
-        _user = User(
-          id: '1',
-          name: 'Demo',
-          surname: 'Puantajcı',
-          email: email,
-          role: AppConstants.roleSupervisor,
-          token: 'demo_token_${DateTime.now().millisecondsSinceEpoch}',
-          createdAt: DateTime.now(),
-        );
-        
-        // Token'ı güvenli depolamaya kaydet
-        await _secureStorage.write(key: AppConstants.tokenKey, value: _user?.token);
-        
-        _status = AuthStatus.authenticated;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      }
-      
-      _errorMessage = 'Giriş sırasında hata oluştu: $e';
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
-  }
-  
-  // Kod ile giriş (İşçi/Malzemeci)
-  Future<bool> loginWithCode(String code, String password) async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-    
-    try {
-      if (AppConstants.useMockApi) {
-        // API olmadığında demo kullanıcı ile giriş yap
-        await Future.delayed(const Duration(seconds: 1)); // Gerçek giriş hissi için kısa gecikme
-        
-        // Demo kullanıcı oluştur - rol koda göre belirlenir
-        String role = code.startsWith('1') ? AppConstants.roleWorker : AppConstants.roleSupplier;
-        
-        _user = User(
-          id: '2',
-          name: 'Demo',
-          surname: role == AppConstants.roleWorker ? 'İşçi' : 'Malzemeci',
-          code: code,
-          role: role,
-          token: 'demo_token_${DateTime.now().millisecondsSinceEpoch}',
-          createdAt: DateTime.now(),
-        );
-        
-        // Token'ı güvenli depolamaya kaydet
-        await _secureStorage.write(key: AppConstants.tokenKey, value: _user?.token);
-        
-        _status = AuthStatus.authenticated;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      }
-      
-      // Normal API isteği
-      final response = await _apiService.post(
-        '/auth/login-with-code',
-        data: {'code': code, 'password': password},
-      );
-      
-      if (response.statusCode == 200) {
-        final data = response.data;
-        _user = User.fromJson(data['user']);
-        _user?.token = data['token'];
-        
-        // Token'ı güvenli depolamaya kaydet
-        await _secureStorage.write(key: AppConstants.tokenKey, value: _user?.token);
-        
-        // Kullanıcı bilgilerini al
-        await getUserProfile();
-        
-        _status = AuthStatus.authenticated;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _errorMessage = 'Giriş başarısız: ${response.data['message'] ?? 'Bilinmeyen hata'}';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-    } catch (e) {
-      if (AppConstants.useMockApi) {
-        // Hata durumunda bile demo kullanıcı ile giriş yap
-        String role = code.startsWith('1') ? AppConstants.roleWorker : AppConstants.roleSupplier;
-        
-        _user = User(
-          id: '2',
-          name: 'Demo',
-          surname: role == AppConstants.roleWorker ? 'İşçi' : 'Malzemeci',
-          code: code,
-          role: role,
-          token: 'demo_token_${DateTime.now().millisecondsSinceEpoch}',
-          createdAt: DateTime.now(),
-        );
-        
-        // Token'ı güvenli depolamaya kaydet
-        await _secureStorage.write(key: AppConstants.tokenKey, value: _user?.token);
-        
-        _status = AuthStatus.authenticated;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      }
-      
-      _errorMessage = 'Giriş sırasında hata oluştu: $e';
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
-  }
-  
-  // Yeni işçi oluştur (Puantajcı)
-  Future<bool> createWorker(String firstName, String lastName) async {
-    if (_user?.role != 'supervisor') {
-      _errorMessage = 'Bu işlemi yapmaya yetkiniz yok';
-      notifyListeners();
-      return false;
-    }
-    
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-    
-    try {
-      final response = await _apiService.post(
-        '/users/create-worker',
-        data: {'firstName': firstName, 'lastName': lastName},
-      );
-      
-      if (response.statusCode == 201) {
-        final data = response.data;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _errorMessage = 'İşçi oluşturma başarısız: ${response.data['message'] ?? 'Bilinmeyen hata'}';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-    } catch (e) {
-      _errorMessage = 'İşçi oluşturma sırasında hata oluştu: $e';
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
-  }
-  
-  // Kullanıcı kaydı
-  Future<bool> register({
-    required String name,
-    required String surname,
-    required String email,
-    required String password,
-    required String role,
-  }) async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-    
-    try {
-      if (AppConstants.useMockApi) {
-        // API olmadığında demo kayıt işlemi yap
-        await Future.delayed(const Duration(seconds: 1)); // Gerçek kayıt hissi için kısa gecikme
-        
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      }
-      
-      final response = await _apiService.post(
-        '/auth/register',
-        data: {
-          'name': name,
-          'surname': surname,
-          'email': email,
-          'password': password,
-          'role': role,
-        },
-      );
-      
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _errorMessage = 'Kayıt başarısız: ${response.data['message'] ?? 'Bilinmeyen hata'}';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-    } catch (e) {
-      if (AppConstants.useMockApi) {
-        // Hata durumunda bile başarılı kayıt göster
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      }
-      
-      _errorMessage = 'Kayıt sırasında hata oluştu: $e';
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
-  }
-  
-  // Yeni malzemeci oluştur (Puantajcı)
-  Future<bool> createSupplier(String firstName, String lastName) async {
-    if (_user?.role != 'supervisor') {
-      _errorMessage = 'Bu işlemi yapmaya yetkiniz yok';
-      notifyListeners();
-      return false;
-    }
-    
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-    
-    try {
-      final response = await _apiService.post(
-        '/users/create-supplier',
-        data: {'firstName': firstName, 'lastName': lastName},
-      );
-      
-      if (response.statusCode == 201) {
-        final data = response.data;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _errorMessage = 'Malzemeci oluşturma başarısız: ${response.data['message'] ?? 'Bilinmeyen hata'}';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-    } catch (e) {
-      _errorMessage = 'Malzemeci oluşturma sırasında hata oluştu: $e';
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
-  }
+  String? get error => _error;
+  String? get errorMessage => _error;
+  String? get userRole => _currentUser?.role;
 
-  // Oturum açmış kullanıcının profilini al
-  Future<bool> getUserProfile() async {
-    if (_user?.token == null) return false;
-    
-    try {
-      final response = await _apiService.get('/users/profile');
-      
-      if (response.statusCode == 200) {
-        final userData = response.data['user'];
-        _user = User.fromJson(userData);
-        notifyListeners();
-        return true;
-      } else {
-        return false;
-      }
-    } catch (e) {
-      print('Kullanıcı profili alınamadı: $e');
-      return false;
-    }
-  }
-
-  // Güvenli depolamadan token'ı kontrol ederek otomatik giriş
+  // Otomatik giriş
   Future<bool> autoLogin() async {
-    final savedToken = await _secureStorage.read(key: 'auth_token');
-    
-    if (savedToken == null) {
+    return await checkAuth();
+  }
+
+  // Kullanıcı kaydı
+  Future<bool> register(
+      String email, String password, String name, String surname) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      _socketService.emit('register', {
+        'email': email,
+        'password': password,
+        'name': name,
+        'surname': surname,
+      });
+
+      final response = await _waitForSocketResponse('registerResponse');
+
+      if (response['success'] == true) {
+        final user = User.fromJson(response['user']);
+        await _storage.write(key: 'auth_token', value: user.token);
+        await _cacheService.put('users', 'current_user', user.toJson());
+        _currentUser = user;
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = response['message'] ?? 'Kayıt başarısız';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = 'Kayıt yapılamadı: $e';
+      _isLoading = false;
+      notifyListeners();
       return false;
     }
-    
-    _user?.token = savedToken;
-    _apiService.setToken(savedToken);
-    
-    final success = await getUserProfile();
-    return success;
   }
-  
+
+  // Profil güncelleme
+  Future<bool> updateProfile(String name, String surname, String email) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      _socketService.emit('updateProfile', {
+        'name': name,
+        'surname': surname,
+        'email': email,
+      });
+
+      final response = await _waitForSocketResponse('updateProfileResponse');
+
+      if (response['success'] == true) {
+        final user = User.fromJson(response['user']);
+        await _cacheService.put('users', 'current_user', user.toJson());
+        _currentUser = user;
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = response['message'] ?? 'Profil güncellenemedi';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = 'Profil güncellenemedi: $e';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Şifre güncelleme
+  Future<bool> updatePassword(
+      String currentPassword, String newPassword) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      _socketService.emit('updatePassword', {
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+      });
+
+      final response = await _waitForSocketResponse('updatePasswordResponse');
+
+      if (response['success'] == true) {
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = response['message'] ?? 'Şifre güncellenemedi';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = 'Şifre güncellenemedi: $e';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Hesap silme
+  Future<bool> deleteAccount() async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      _socketService.emit('deleteAccount', {});
+
+      final response = await _waitForSocketResponse('deleteAccountResponse');
+
+      if (response['success'] == true) {
+        await _storage.delete(key: 'auth_token');
+        await _cacheService.delete('users', 'current_user');
+        _currentUser = null;
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = response['message'] ?? 'Hesap silinemedi';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = 'Hesap silinemedi: $e';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Email ile giriş
+  Future<bool> loginWithEmail(String email, String password) async {
+    return login(email, password);
+  }
+
+  // Kullanıcı girişi
+  Future<bool> login(String email, String password) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      _socketService.emit('login', {
+        'email': email,
+        'password': password,
+      });
+
+      final response = await _waitForSocketResponse('loginResponse');
+
+      if (response['success'] == true) {
+        final user = User.fromJson(response['user']);
+        await _storage.write(key: 'auth_token', value: user.token);
+        await _cacheService.put('users', 'current_user', user.toJson());
+        _currentUser = user;
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = response['message'] ?? 'Giriş başarısız';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = 'Giriş yapılamadı: $e';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Kod ile giriş
+  Future<bool> loginWithCode(String code, String password) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      _socketService
+          .emit('loginWithCode', {'code': code, 'password': password});
+
+      final response = await _waitForSocketResponse('loginWithCodeResponse');
+
+      if (response['success'] == true) {
+        final user = User.fromJson(response['user']);
+        await _storage.write(key: 'auth_token', value: user.token);
+        await _cacheService.put('users', 'current_user', user.toJson());
+        _currentUser = user;
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = response['message'] ?? 'Kod ile giriş başarısız';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = 'Kod ile giriş yapılamadı: $e';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   // Çıkış yap
   Future<void> logout() async {
     try {
-      if (AppConstants.useMockApi) {
-        // Mock API için sadece token ve kullanıcı bilgilerini temizle
-        await _secureStorage.delete(key: AppConstants.tokenKey);
-        await _secureStorage.delete(key: 'user_data');
-        
-        _user = null;
-        _status = AuthStatus.unauthenticated;
-        _errorMessage = null;
-        
-        notifyListeners();
-        return;
+      _isLoading = true;
+      notifyListeners();
+
+      _socketService.emit('logout', {});
+
+      await _storage.delete(key: 'auth_token');
+      await _cacheService.delete('users', 'current_user');
+
+      _currentUser = null;
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _error = 'Çıkış yapılamadı: $e';
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // Oturum kontrolü
+  Future<bool> checkAuth() async {
+    try {
+      final token = await _storage.read(key: 'auth_token');
+      if (token == null) return false;
+
+      _socketService.emit('verifyToken', {'token': token});
+
+      final response = await _waitForSocketResponse('verifyTokenResponse');
+
+      if (response['success'] == true) {
+        final userData = await _cacheService.get('users', 'current_user');
+        if (userData != null) {
+          _currentUser = User.fromJson(userData);
+          notifyListeners();
+          return true;
+        }
       }
-      
-      await _apiService.logout();
-      
-      // WebSocket bağlantısını kapat
-      _socketService.disconnect();
-      
-      // Kullanıcı verilerini temizle
-      await _secureStorage.delete(key: AppConstants.tokenKey);
-      await _secureStorage.delete(key: 'user_data');
-      
-      _user = null;
-      _status = AuthStatus.unauthenticated;
-      _errorMessage = null;
-      
-      notifyListeners();
+
+      return false;
     } catch (e) {
-      if (AppConstants.useMockApi) {
-        // Mock API için hata durumunda da token ve kullanıcı bilgilerini temizle
-        await _secureStorage.delete(key: AppConstants.tokenKey);
-        await _secureStorage.delete(key: 'user_data');
-        
-        _user = null;
-        _status = AuthStatus.unauthenticated;
-        _errorMessage = null;
-        
-        notifyListeners();
-        return;
+      if (kDebugMode) {
+        print('Check auth error: $e');
       }
-      
-      _errorMessage = e.toString();
-      notifyListeners();
-    }
-  }
-  
-  // Profil bilgilerini güncelle
-  Future<bool> updateProfile({
-    String? name,
-    String? surname,
-    String? email,
-  }) async {
-    try {
-      final updatedUser = await _apiService.updateProfile(
-        name: name,
-        surname: surname,
-        email: email,
-      );
-      
-      _user = updatedUser;
-      
-      // Kullanıcı verilerini güvenli depolamaya kaydet
-      await _saveUserData(updatedUser);
-      
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _errorMessage = e.toString();
-      notifyListeners();
       return false;
     }
   }
-  
-  // Şifre güncelleme
-  Future<bool> updatePassword({
-    required String currentPassword,
-    required String newPassword,
-  }) async {
+
+  // Socket yanıtını bekle
+  Future<Map<String, dynamic>> _waitForSocketResponse(String event) async {
     try {
-      await _apiService.updatePassword(
-        currentPassword: currentPassword,
-        newPassword: newPassword,
-      );
-      
-      notifyListeners();
-      return true;
+      final completer = Completer<Map<String, dynamic>>();
+
+      final timer = Timer(const Duration(seconds: 10), () {
+        if (!completer.isCompleted) {
+          completer.completeError('İstek zaman aşımına uğradı');
+        }
+      });
+
+      void listener(dynamic data) {
+        if (!completer.isCompleted) {
+          timer.cancel();
+          _socketService.off(event);
+          completer.complete(data as Map<String, dynamic>);
+        }
+      }
+
+      _socketService.on(event, listener);
+
+      return await completer.future;
     } catch (e) {
-      _errorMessage = e.toString();
-      notifyListeners();
-      return false;
+      throw 'Socket yanıtı alınamadı: $e';
     }
   }
-  
-  // Hesabı sil
-  Future<bool> deleteAccount() async {
-    try {
-      await _apiService.deleteAccount();
-      
-      // WebSocket bağlantısını kapat
-      _socketService.disconnect();
-      
-      // Kullanıcı verilerini temizle
-      await _secureStorage.delete(key: 'user_data');
-      
-      _user = null;
-      _status = AuthStatus.unauthenticated;
-      _errorMessage = null;
-      
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _errorMessage = e.toString();
-      notifyListeners();
-      return false;
-    }
-  }
-  
-  // Kullanıcı verilerini güvenli depolamaya kaydet
-  Future<void> _saveUserData(User user) async {
-    final userData = jsonEncode(user.toJson());
-    await _secureStorage.write(key: 'user_data', value: userData);
-  }
-} 
+}

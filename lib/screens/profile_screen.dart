@@ -69,10 +69,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       await authProvider.updateProfile(
-        name: _nameController.text,
-        surname: _surnameController.text,
-        email: _emailController.text,
-      );
+          _nameController.text, _surnameController.text, _emailController.text);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -116,9 +113,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       await authProvider.updatePassword(
-        currentPassword: _currentPasswordController.text,
-        newPassword: _newPasswordController.text,
-      );
+          _currentPasswordController.text, _newPasswordController.text);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -150,7 +145,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       await authProvider.logout();
-      
+
       if (mounted) {
         Navigator.of(context).pushReplacementNamed('/login');
       }
@@ -168,7 +163,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Hesabı Sil'),
-        content: const Text('Hesabınızı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.'),
+        content: const Text(
+            'Hesabınızı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -193,7 +189,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       await authProvider.deleteAccount();
-      
+
       if (mounted) {
         Navigator.of(context).pushReplacementNamed('/login');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -240,7 +236,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           radius: 50,
           backgroundColor: Colors.blue.shade100,
           child: Text(
-            '${user.name?.substring(0, 1) ?? ''}${user.surname?.substring(0, 1) ?? ''}'.toUpperCase(),
+            '${user.name?.substring(0, 1) ?? ''}${user.surname?.substring(0, 1) ?? ''}'
+                .toUpperCase(),
             style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
           ),
         ),
@@ -258,14 +255,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
           decoration: BoxDecoration(
-            color: isSupervisor || isAdmin ? Colors.blue.shade100 : Colors.orange.shade100,
+            color: isSupervisor || isAdmin
+                ? Colors.blue.shade100
+                : Colors.orange.shade100,
             borderRadius: BorderRadius.circular(15),
           ),
           child: Text(
             user.role?.toUpperCase() ?? 'ÇALIŞAN',
             style: TextStyle(
               fontSize: 12,
-              color: isSupervisor || isAdmin ? Colors.blue.shade800 : Colors.orange.shade800,
+              color: isSupervisor || isAdmin
+                  ? Colors.blue.shade800
+                  : Colors.orange.shade800,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -302,7 +303,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           title: const Text('Çıkış Yap', style: TextStyle(color: Colors.red)),
           onTap: _logout,
         ),
-        if (isAdmin || isSupervisor) 
+        if (isAdmin || isSupervisor)
           const SizedBox()
         else
           Column(
@@ -310,7 +311,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.delete_forever, color: Colors.red),
-                title: const Text('Hesabı Sil', style: TextStyle(color: Colors.red)),
+                title: const Text('Hesabı Sil',
+                    style: TextStyle(color: Colors.red)),
                 onTap: _deleteAccount,
               ),
             ],
@@ -527,4 +529,4 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
     );
   }
-} 
+}

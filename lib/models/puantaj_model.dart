@@ -1,148 +1,155 @@
-import 'package:equatable/equatable.dart';
 import 'package:intl/intl.dart';
-import 'package:iskele360v7/models/user_model.dart';
 
-class Puantaj extends Equatable {
+class Puantaj {
   final String id;
-  final String workerId; // İşçi ID'si
-  final String supervisorId; // Puantajcı ID'si
-  final DateTime date;
-  final double hours;
-  final String? description;
-  final DateTime createdAt;
-  final User? worker; // İlişkili işçi
-  final User? supervisor; // İlişkili puantajcı
-  final String? projeId;
-  final String? projeBilgisi;
-  final String? durum;
-  final String? baslangicSaati;
-  final String? bitisSaati;
+  final String isciId;
+  final DateTime baslangicSaati;
+  final DateTime bitisSaati;
   final double calismaSuresi;
+  final String projeId;
+  final String projeBilgisi;
   final String? aciklama;
+  final String durum;
+  final DateTime tarih;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final Map<String, dynamic>? additionalData;
+  final Map<String, dynamic>? worker;
 
-  const Puantaj({
+  Puantaj({
     required this.id,
-    required this.workerId,
-    required this.supervisorId,
-    required this.date,
-    required this.hours,
-    this.description,
-    required this.createdAt,
-    this.worker,
-    this.supervisor,
-    this.projeId,
-    this.projeBilgisi,
-    this.durum,
-    this.baslangicSaati,
-    this.bitisSaati,
+    required this.isciId,
+    required this.baslangicSaati,
+    required this.bitisSaati,
     required this.calismaSuresi,
+    required this.projeId,
+    required this.projeBilgisi,
     this.aciklama,
+    required this.durum,
+    required this.tarih,
+    required this.createdAt,
+    required this.updatedAt,
+    this.additionalData,
+    this.worker,
   });
 
-  @override
-  List<Object?> get props => [
-    id,
-    workerId,
-    supervisorId,
-    date,
-    hours,
-    description,
-    createdAt,
-    worker,
-    supervisor,
-    projeId,
-    projeBilgisi,
-    durum,
-    baslangicSaati,
-    bitisSaati,
-    calismaSuresi,
-    aciklama,
-  ];
+  // Getters
+  DateTime get date => tarih;
+  String get description => aciklama ?? '';
+  double get hours => calismaSuresi;
+  String get formattedTarih => getFormattedDate();
 
-  // Görüntüleme için formatlı tarih
-  String get formattedTarih => DateFormat('dd.MM.yyyy').format(date);
-  
-  // Getter for tarih (alias for date)
-  DateTime get tarih => date;
-
-  // Backend'den gelen JSON'dan Puantaj nesnesi oluştur
-  factory Puantaj.fromJson(Map<String, dynamic> json) {
-    return Puantaj(
-      id: json['id'],
-      workerId: json['workerId'],
-      supervisorId: json['supervisorId'],
-      date: DateTime.parse(json['date']),
-      hours: double.parse(json['hours'].toString()),
-      description: json['description'],
-      createdAt: DateTime.parse(json['createdAt']),
-      worker: json['worker'] != null ? User.fromJson(json['worker']) : null,
-      supervisor: json['supervisor'] != null ? User.fromJson(json['supervisor']) : null,
-      projeId: json['projeId'],
-      projeBilgisi: json['projeBilgisi'],
-      durum: json['durum'],
-      baslangicSaati: json['baslangicSaati'],
-      bitisSaati: json['bitisSaati'],
-      calismaSuresi: json['calismaSuresi'] != null ? double.parse(json['calismaSuresi'].toString()) : 0.0,
-      aciklama: json['aciklama'] ?? json['description'],
-    );
-  }
-
-  // Puantaj nesnesini JSON'a dönüştür
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'workerId': workerId,
-      'supervisorId': supervisorId,
-      'date': date.toIso8601String(),
-      'hours': hours,
-      'description': description,
-      'createdAt': createdAt.toIso8601String(),
+      'isciId': isciId,
+      'baslangicSaati': baslangicSaati.toIso8601String(),
+      'bitisSaati': bitisSaati.toIso8601String(),
+      'calismaSuresi': calismaSuresi,
       'projeId': projeId,
       'projeBilgisi': projeBilgisi,
-      'durum': durum,
-      'baslangicSaati': baslangicSaati,
-      'bitisSaati': bitisSaati,
-      'calismaSuresi': calismaSuresi,
       'aciklama': aciklama,
+      'durum': durum,
+      'tarih': tarih.toIso8601String(),
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      if (worker != null) 'worker': worker,
+      if (additionalData != null) ...additionalData!,
     };
   }
 
-  // Puantaj nesnesinin kopyasını oluştur
+  factory Puantaj.fromJson(Map<String, dynamic> json) {
+    return Puantaj(
+      id: json['_id'] ?? json['id'],
+      isciId: json['isciId'],
+      baslangicSaati: DateTime.parse(json['baslangicSaati']),
+      bitisSaati: DateTime.parse(json['bitisSaati']),
+      calismaSuresi: double.parse(json['calismaSuresi'].toString()),
+      projeId: json['projeId'],
+      projeBilgisi: json['projeBilgisi'],
+      aciklama: json['aciklama'],
+      durum: json['durum'],
+      tarih: DateTime.parse(json['tarih']),
+      createdAt: DateTime.parse(json['createdAt']),
+      updatedAt: DateTime.parse(json['updatedAt']),
+      worker: json['worker'],
+      additionalData: json['additionalData'],
+    );
+  }
+
+  String getFormattedDate() {
+    return DateFormat('dd.MM.yyyy').format(tarih);
+  }
+
+  String getFormattedStartTime() {
+    return DateFormat('HH:mm').format(baslangicSaati);
+  }
+
+  String getFormattedEndTime() {
+    return DateFormat('HH:mm').format(bitisSaati);
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      '_id': id,
+      'isciId': isciId,
+      'baslangicSaati': baslangicSaati.toIso8601String(),
+      'bitisSaati': bitisSaati.toIso8601String(),
+      'calismaSuresi': calismaSuresi,
+      'projeId': projeId,
+      'projeBilgisi': projeBilgisi,
+      'aciklama': aciklama,
+      'durum': durum,
+      'tarih': tarih.toIso8601String(),
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'formattedDate': getFormattedDate(),
+      'formattedStartTime': getFormattedStartTime(),
+      'formattedEndTime': getFormattedEndTime(),
+      'hours': hours,
+      'description': description,
+      if (worker != null) 'worker': worker,
+      if (additionalData != null) ...additionalData!,
+    };
+  }
+
   Puantaj copyWith({
     String? id,
-    String? workerId,
-    String? supervisorId,
-    DateTime? date,
-    double? hours,
-    String? description,
-    DateTime? createdAt,
-    User? worker,
-    User? supervisor,
+    String? isciId,
+    DateTime? baslangicSaati,
+    DateTime? bitisSaati,
+    double? calismaSuresi,
     String? projeId,
     String? projeBilgisi,
-    String? durum,
-    String? baslangicSaati,
-    String? bitisSaati,
-    double? calismaSuresi,
     String? aciklama,
+    String? durum,
+    DateTime? tarih,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Map<String, dynamic>? worker,
+    Map<String, dynamic>? additionalData,
   }) {
     return Puantaj(
       id: id ?? this.id,
-      workerId: workerId ?? this.workerId,
-      supervisorId: supervisorId ?? this.supervisorId,
-      date: date ?? this.date,
-      hours: hours ?? this.hours,
-      description: description ?? this.description,
-      createdAt: createdAt ?? this.createdAt,
-      worker: worker ?? this.worker,
-      supervisor: supervisor ?? this.supervisor,
-      projeId: projeId ?? this.projeId,
-      projeBilgisi: projeBilgisi ?? this.projeBilgisi,
-      durum: durum ?? this.durum,
+      isciId: isciId ?? this.isciId,
       baslangicSaati: baslangicSaati ?? this.baslangicSaati,
       bitisSaati: bitisSaati ?? this.bitisSaati,
       calismaSuresi: calismaSuresi ?? this.calismaSuresi,
+      projeId: projeId ?? this.projeId,
+      projeBilgisi: projeBilgisi ?? this.projeBilgisi,
       aciklama: aciklama ?? this.aciklama,
+      durum: durum ?? this.durum,
+      tarih: tarih ?? this.tarih,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      worker: worker ?? this.worker,
+      additionalData: additionalData ?? this.additionalData,
     );
   }
-} 
+
+  @override
+  String toString() {
+    return 'Puantaj(id: $id, isciId: $isciId, tarih: ${getFormattedDate()})';
+  }
+}

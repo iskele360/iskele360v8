@@ -15,7 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _codeController = TextEditingController();
   final _passwordController = TextEditingController();
-  
+
   bool _isLoading = false;
   bool _isPasswordVisible = false;
   bool _isCodeLogin = false; // İşçi ve malzemeci için kod ile giriş
@@ -45,15 +45,11 @@ class _LoginScreenState extends State<LoginScreen> {
       if (_isCodeLogin) {
         // Kod ile giriş (işçi veya malzemeci)
         success = await authProvider.loginWithCode(
-          _codeController.text.trim(), 
-          _passwordController.text
-        );
+            _codeController.text.trim(), _passwordController.text);
       } else {
         // Email ile giriş (puantajcı)
         success = await authProvider.loginWithEmail(
-          _emailController.text.trim(), 
-          _passwordController.text
-        );
+            _emailController.text.trim(), _passwordController.text);
       }
 
       if (mounted) {
@@ -134,7 +130,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 40),
-              
+
               // Giriş formu
               Expanded(
                 child: Container(
@@ -153,11 +149,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         // Giriş seçenekleri (Sekmeler)
                         _buildLoginTabs(),
                         const SizedBox(height: 24),
-                        
+
                         // Giriş formu
                         _buildLoginForm(),
                         const SizedBox(height: 32),
-                        
+
                         // Giriş butonu
                         ElevatedButton(
                           onPressed: _isLoading ? null : _login,
@@ -165,7 +161,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             backgroundColor: Colors.blue,
                             foregroundColor: Colors.white,
-                            disabledBackgroundColor: Colors.blue.withOpacity(0.5),
+                            disabledBackgroundColor:
+                                Colors.blue.withOpacity(0.5),
                           ),
                           child: _isLoading
                               ? const SizedBox(
@@ -182,7 +179,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                         ),
                         const SizedBox(height: 24),
-                        
+
                         // Puantajcı kaydı butonu (sadece puantajcı sekmesindeyken görünecek)
                         if (_selectedRole == 'supervisor')
                           TextButton.icon(
@@ -192,7 +189,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             icon: const Icon(Icons.person_add),
                             label: const Text('Puantajcı Kaydı Oluştur'),
                           ),
-                        
+
                         // Ana ekrana dön
                         TextButton.icon(
                           onPressed: () {
@@ -201,7 +198,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           icon: const Icon(Icons.arrow_back),
                           label: const Text('Ana Ekrana Dön'),
                         ),
-                        
+
                         // Sürüm bilgisi
                         const SizedBox(height: 16),
                         const Text(
@@ -223,7 +220,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-  
+
   Widget _buildLoginTabs() {
     return Row(
       children: [
@@ -254,10 +251,10 @@ class _LoginScreenState extends State<LoginScreen> {
       ],
     );
   }
-  
+
   Widget _buildRoleTab(String title, IconData icon, String role, Color color) {
     final isSelected = _selectedRole == role;
-    
+
     return InkWell(
       onTap: () {
         setState(() {
@@ -294,7 +291,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-  
+
   Widget _buildLoginForm() {
     return Form(
       key: _formKey,
@@ -309,7 +306,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          
+
           // Email veya kod girişi
           if (_isCodeLogin)
             TextFormField(
@@ -357,7 +354,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 return null;
               },
             ),
-          
+
           const SizedBox(height: 16),
           const Text(
             'Şifre',
@@ -367,7 +364,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          
+
           // Şifre girişi
           TextFormField(
             controller: _passwordController,
@@ -402,4 +399,4 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-} 
+}

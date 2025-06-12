@@ -17,7 +17,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  
+
   final ApiService _apiService = ApiService();
   bool _isLoading = false;
   String? _errorMessage;
@@ -49,18 +49,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       try {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        
+
         await authProvider.register(
-          name: _nameController.text,
-          surname: _surnameController.text,
-          email: _emailController.text,
-          password: _passwordController.text,
-          role: 'supervisor',
-        );
+            _emailController.text,
+            _passwordController.text,
+            _nameController.text,
+            _surnameController.text);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Kayıt başarılı! Giriş yapabilirsiniz.')),
+            const SnackBar(
+                content: Text('Kayıt başarılı! Giriş yapabilirsiniz.')),
           );
           Navigator.pushReplacementNamed(context, '/login');
         }
@@ -101,7 +100,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     style: const TextStyle(color: Colors.red),
                   ),
                 ),
-              
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
@@ -116,9 +114,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 16),
-              
               TextFormField(
                 controller: _surnameController,
                 decoration: const InputDecoration(
@@ -133,9 +129,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 16),
-              
               TextFormField(
                 controller: _emailController,
                 decoration: const InputDecoration(
@@ -154,9 +148,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 16),
-              
               TextFormField(
                 controller: _passwordController,
                 decoration: const InputDecoration(
@@ -175,9 +167,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 16),
-              
               TextFormField(
                 controller: _confirmPasswordController,
                 decoration: const InputDecoration(
@@ -193,9 +183,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 24),
-              
               ElevatedButton.icon(
                 onPressed: _isLoading ? null : _register,
                 icon: const Icon(Icons.person_add),
@@ -212,9 +200,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   foregroundColor: Colors.white,
                 ),
               ),
-              
               const SizedBox(height: 16),
-              
               TextButton.icon(
                 onPressed: () {
                   Navigator.pop(context);

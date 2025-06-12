@@ -1,15 +1,21 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const Redis = require('ioredis');
-const cloudinary = require('cloudinary').v2;
-const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const compression = require('compression');
-const dotenv = require('dotenv');
-const morgan = require('morgan');
-const { createServer } = require('http');
-const { Server } = require('socket.io');
+import express from 'express';
+import mongoose from 'mongoose';
+import Redis from 'ioredis';
+import { v2 as cloudinary } from 'cloudinary';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import compression from 'compression';
+import dotenv from 'dotenv';
+import morgan from 'morgan';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// ES Module dirname setup
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Load environment variables
 dotenv.config();
@@ -39,33 +45,33 @@ mongoose.connect(process.env.MONGODB_URI, {
   autoIndex: false
 })
 .then(() => {
-  console.log('MongoDB bağlantısı başarılı');
+  console.log('✅ MongoDB bağlantısı başarılı');
   // Create indexes for better performance
   createIndexes();
 })
 .catch((err) => {
-  console.error('MongoDB bağlantı hatası:', err.message);
+  console.error('❌ MongoDB bağlantı hatası:', err.message);
   process.exit(1);
 });
 
-// Redis client setup (optional)
+// Redis client setup
 let redis;
 try {
   if (process.env.UPSTASH_REDIS_URL) {
     redis = new Redis(process.env.UPSTASH_REDIS_URL);
     redis.on('connect', () => {
-      console.log('Redis bağlantısı başarılı');
+      console.log('✅ Redis bağlantısı başarılı');
     });
     redis.on('error', (err) => {
-      console.warn('Redis bağlantı hatası:', err.message);
+      console.warn('⚠️ Redis bağlantı hatası:', err.message);
       console.log('Redis olmadan devam ediliyor...');
       redis = null;
     });
   } else {
-    console.log('Redis URL tanımlanmamış, Redis olmadan devam ediliyor...');
+    console.log('⚠️ Redis URL tanımlanmamış, Redis olmadan devam ediliyor...');
   }
 } catch (error) {
-  console.warn('Redis başlatma hatası:', error.message);
+  console.warn('⚠️ Redis başlatma hatası:', error.message);
   console.log('Redis olmadan devam ediliyor...');
   redis = null;
 }
@@ -77,7 +83,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Middleware
+// Security Middleware
 app.use(helmet()); // Security headers
 app.use(cors({
   origin: process.env.CORS_ORIGIN,
@@ -85,6 +91,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }));
+
+// Performance Middleware
 app.use(compression()); // Response compression
 app.use(express.json({ limit: process.env.MAX_FILE_SIZE })); // Body parser
 app.use(express.urlencoded({ extended: true, limit: process.env.MAX_FILE_SIZE }));
@@ -107,7 +115,7 @@ app.use((req, res, next) => {
   res.on('finish', () => {
     const duration = Date.now() - start;
     if (duration > parseInt(process.env.SLOW_QUERY_THRESHOLD_MS)) {
-      console.warn(`Yavaş sorgu: ${req.method} ${req.originalUrl} - ${duration}ms`);
+      console.warn(`⚠️ Yavaş sorgu: ${req.method} ${req.originalUrl} - ${duration}ms`);
     }
   });
   next();
@@ -130,28 +138,28 @@ async function createIndexes() {
     await db.collection('puantaj').createIndex({ projeId: 1, tarih: -1 });
     await db.collection('puantaj').createIndex({ durum: 1, tarih: -1 });
     
-    console.log('MongoDB indeksleri oluşturuldu');
+    console.log('✅ MongoDB indeksleri oluşturuldu');
   } catch (error) {
-    console.error('Index oluşturma hatası:', error);
+    console.error('❌ Index oluşturma hatası:', error);
   }
 }
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  console.log('Yeni socket bağlantısı:', socket.id);
+  console.log('🔌 Yeni socket bağlantısı:', socket.id);
 
   socket.on('join', (room) => {
     socket.join(room);
-    console.log(`Socket ${socket.id} joined room: ${room}`);
+    console.log(`🔌 Socket ${socket.id} joined room: ${room}`);
   });
 
   socket.on('leave', (room) => {
     socket.leave(room);
-    console.log(`Socket ${socket.id} left room: ${room}`);
+    console.log(`🔌 Socket ${socket.id} left room: ${room}`);
   });
 
   socket.on('disconnect', () => {
-    console.log('Socket bağlantısı kesildi:', socket.id);
+    console.log('🔌 Socket bağlantısı kesildi:', socket.id);
   });
 });
 
@@ -166,7 +174,8 @@ app.get('/healthcheck', (req, res) => {
     timestamp: new Date().toISOString(),
     services: {
       mongodb: mongoStatus ? 'connected' : 'disconnected',
-      redis: redisStatus ? 'connected' : 'disconnected'
+      redis: redisStatus,
+      cloudinary: 'connected'
     }
   });
 });
@@ -181,8 +190,19 @@ app.get('/', (req, res) => {
 });
 
 // API Routes
-app.use(`${process.env.API_PREFIX}/auth`, require('./routes/auth.routes'));
-app.use(`${process.env.API_PREFIX}/puantaj`, require('./routes/puantaj.routes'));
+const API_PREFIX = process.env.API_PREFIX;
+
+// Import routes dynamically
+const routes = [
+  { path: '/auth', module: './routes/auth.routes.js' },
+  { path: '/puantaj', module: './routes/puantaj.routes.js' }
+];
+
+// Register routes
+for (const route of routes) {
+  const module = await import(route.module);
+  app.use(`${API_PREFIX}${route.path}`, module.default);
+}
 
 // 404 handler
 app.all('*', (req, res) => {
@@ -194,7 +214,7 @@ app.all('*', (req, res) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
-  console.error('Hata:', err);
+  console.error('❌ Hata:', err);
 
   res.status(err.status || 500).json({
     status: 'error',
@@ -205,21 +225,21 @@ app.use((err, req, res, next) => {
 // Start server
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => {
-  console.log(`Sunucu ${PORT} portunda çalışıyor`);
-  console.log(`Ortam: ${process.env.NODE_ENV}`);
-  console.log('API hazır');
+  console.log(`🚀 Sunucu ${PORT} portunda çalışıyor`);
+  console.log(`🌍 Ortam: ${process.env.NODE_ENV}`);
+  console.log('✨ API hazır');
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('SIGTERM sinyali alındı. Sunucu kapatılıyor...');
+  console.log('⚡ SIGTERM sinyali alındı. Sunucu kapatılıyor...');
   httpServer.close(() => {
-    console.log('Sunucu kapatıldı');
+    console.log('✅ Sunucu kapatıldı');
     mongoose.connection.close(false, () => {
-      console.log('MongoDB bağlantısı kapatıldı');
+      console.log('✅ MongoDB bağlantısı kapatıldı');
       if (redis) {
         redis.quit(() => {
-          console.log('Redis bağlantısı kapatıldı');
+          console.log('✅ Redis bağlantısı kapatıldı');
           process.exit(0);
         });
       } else {
@@ -231,7 +251,7 @@ process.on('SIGTERM', () => {
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
-  console.error('Yakalanmamış istisna:', err);
+  console.error('❌ Yakalanmamış istisna:', err);
   httpServer.close(() => {
     process.exit(1);
   });
@@ -239,10 +259,10 @@ process.on('uncaughtException', (err) => {
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
-  console.error('İşlenmemiş promise reddi:', err);
+  console.error('❌ İşlenmemiş promise reddi:', err);
   httpServer.close(() => {
     process.exit(1);
   });
 });
 
-module.exports = { app, httpServer, io };
+export { app, httpServer, io, redis };

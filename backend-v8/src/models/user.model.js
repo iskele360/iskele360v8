@@ -1,98 +1,66 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import validator from 'validator';
 
 const userSchema = new mongoose.Schema({
   firstName: {
     type: String,
-    required: [true, 'Ad alanı zorunludur'],
+    required: [true, 'İsim zorunludur'],
     trim: true,
-    minlength: [2, 'Ad en az 2 karakter olmalıdır'],
-    maxlength: [50, 'Ad en fazla 50 karakter olabilir']
+    maxLength: [50, 'İsim 50 karakterden uzun olamaz']
   },
   lastName: {
     type: String,
-    required: [true, 'Soyad alanı zorunludur'],
+    required: [true, 'Soyisim zorunludur'],
     trim: true,
-    minlength: [2, 'Soyad en az 2 karakter olmalıdır'],
-    maxlength: [50, 'Soyad en fazla 50 karakter olabilir']
+    maxLength: [50, 'Soyisim 50 karakterden uzun olamaz']
   },
   email: {
     type: String,
+    required: [true, 'Email zorunludur'],
     unique: true,
-    sparse: true,
-    trim: true,
     lowercase: true,
-    match: [/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/, 'Geçerli bir email adresi giriniz']
+    validate: [validator.isEmail, 'Geçerli bir email adresi giriniz']
+  },
+  phone: {
+    type: String,
+    trim: true,
+    validate: {
+      validator: function(v) {
+        return /^\+?[1-9]\d{1,14}$/.test(v);
+      },
+      message: 'Geçerli bir telefon numarası giriniz'
+    }
   },
   password: {
     type: String,
-    required: [true, 'Şifre alanı zorunludur'],
-    minlength: [6, 'Şifre en az 6 karakter olmalıdır'],
+    required: [true, 'Şifre zorunludur'],
+    minlength: [8, 'Şifre en az 8 karakter olmalıdır'],
     select: false
   },
   role: {
     type: String,
     enum: {
-      values: ['admin', 'puantajci', 'isci', 'tedarikci'],
+      values: ['admin', 'supervisor', 'puantajci', 'isci'],
       message: 'Geçersiz rol'
     },
-    required: [true, 'Rol alanı zorunludur']
-  },
-  code: {
-    type: String,
-    unique: true,
-    sparse: true
-  },
-  phone: {
-    type: String,
-    trim: true,
-    match: [/^[0-9]{10}$/, 'Geçerli bir telefon numarası giriniz']
-  },
-  avatar: {
-    type: String,
-    default: 'default-avatar.png'
+    default: 'isci'
   },
   isActive: {
     type: Boolean,
-    default: true
+    default: true,
+    select: false
   },
-  lastLogin: {
-    type: Date
-  },
-  passwordChangedAt: Date,
-  passwordResetToken: String,
-  passwordResetExpires: Date,
-  deviceTokens: [{
-    token: String,
-    platform: {
-      type: String,
-      enum: ['ios', 'android']
-    },
-    lastUsed: Date
-  }],
-  settings: {
-    notifications: {
-      push: {
-        type: Boolean,
-        default: true
-      },
-      email: {
-        type: Boolean,
-        default: true
-      }
-    },
-    language: {
-      type: String,
-      enum: ['tr', 'en'],
-      default: 'tr'
-    },
-    theme: {
-      type: String,
-      enum: ['light', 'dark', 'system'],
-      default: 'system'
-    }
+  avatar: {
+    url: String,
+    publicId: String
   },
   meta: {
+    lastLogin: Date,
+    passwordChangedAt: Date,
+    passwordResetToken: String,
+    passwordResetExpires: Date,
     createdBy: {
       type: mongoose.Schema.ObjectId,
       ref: 'User'
@@ -101,6 +69,10 @@ const userSchema = new mongoose.Schema({
       type: mongoose.Schema.ObjectId,
       ref: 'User'
     }
+  },
+  permissions: {
+    type: [String],
+    select: false
   }
 }, {
   timestamps: true,
@@ -108,27 +80,28 @@ const userSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Virtual Fields
+// Virtual field for full name
 userSchema.virtual('fullName').get(function() {
   return `${this.firstName} ${this.lastName}`;
 });
 
-// Indexes
-userSchema.index({ email: 1 }, { unique: true, sparse: true });
-userSchema.index({ code: 1 }, { unique: true, sparse: true });
+// Index for better query performance
+userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ role: 1, isActive: 1 });
-userSchema.index({ createdAt: -1 });
+userSchema.index({ 'meta.createdBy': 1 });
 
-// Middleware
+// Middleware to hash password before save
 userSchema.pre('save', async function(next) {
+  // Only hash the password if it has been modified
   if (!this.isModified('password')) return next();
   
   try {
-    const salt = await bcrypt.genSalt(parseInt(process.env.BCRYPT_SALT_ROUNDS));
-    this.password = await bcrypt.hash(this.password, salt);
+    // Hash password with cost of 12
+    this.password = await bcrypt.hash(this.password, 12);
     
-    if (this.isModified('password') && !this.isNew) {
-      this.passwordChangedAt = Date.now() - 1000;
+    // Update passwordChangedAt if password is changed
+    if (!this.isNew) {
+      this.meta.passwordChangedAt = Date.now() - 1000;
     }
     
     next();
@@ -137,7 +110,15 @@ userSchema.pre('save', async function(next) {
   }
 });
 
-// Instance Methods
+// Middleware to update updatedBy field
+userSchema.pre('save', function(next) {
+  if (this.updatedBy) {
+    this.meta.updatedBy = this.updatedBy;
+  }
+  next();
+});
+
+// Method to check if password is correct
 userSchema.methods.comparePassword = async function(candidatePassword) {
   try {
     return await bcrypt.compare(candidatePassword, this.password);
@@ -146,61 +127,62 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
   }
 };
 
+// Method to check if password was changed after token was issued
 userSchema.methods.changedPasswordAfter = function(JWTTimestamp) {
-  if (this.passwordChangedAt) {
-    const changedTimestamp = parseInt(this.passwordChangedAt.getTime() / 1000, 10);
+  if (this.meta.passwordChangedAt) {
+    const changedTimestamp = parseInt(
+      this.meta.passwordChangedAt.getTime() / 1000,
+      10
+    );
     return JWTTimestamp < changedTimestamp;
   }
   return false;
 };
 
+// Method to create password reset token
 userSchema.methods.createPasswordResetToken = function() {
   const resetToken = crypto.randomBytes(32).toString('hex');
-  
-  this.passwordResetToken = crypto
+
+  this.meta.passwordResetToken = crypto
     .createHash('sha256')
     .update(resetToken)
     .digest('hex');
-    
-  this.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
-  
+
+  this.meta.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+
   return resetToken;
 };
 
-userSchema.methods.addDeviceToken = async function(token, platform) {
-  const existingToken = this.deviceTokens.find(t => t.token === token);
-  
-  if (existingToken) {
-    existingToken.lastUsed = new Date();
-  } else {
-    this.deviceTokens.push({
-      token,
-      platform,
-      lastUsed: new Date()
-    });
-  }
-  
-  await this.save();
+// Method to check if user has permission
+userSchema.methods.hasPermission = function(permission) {
+  return this.permissions?.includes(permission);
 };
 
-userSchema.methods.removeDeviceToken = async function(token) {
-  this.deviceTokens = this.deviceTokens.filter(t => t.token !== token);
-  await this.save();
-};
-
-// Static Methods
+// Static method to get user by email
 userSchema.statics.findByEmail = function(email) {
   return this.findOne({ email: email.toLowerCase() });
 };
 
-userSchema.statics.findByCode = function(code) {
-  return this.findOne({ code });
-};
-
+// Static method to get active users by role
 userSchema.statics.findActiveByRole = function(role) {
   return this.find({ role, isActive: true });
 };
 
+// Static method to get user stats
+userSchema.statics.getUserStats = async function() {
+  return this.aggregate([
+    {
+      $group: {
+        _id: '$role',
+        count: { $sum: 1 },
+        activeCount: {
+          $sum: { $cond: ['$isActive', 1, 0] }
+        }
+      }
+    }
+  ]);
+};
+
 const User = mongoose.model('User', userSchema);
 
-module.exports = User;
+export default User;

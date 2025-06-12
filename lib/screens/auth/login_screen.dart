@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:iskele360v7/services/api_service.dart';
+import 'package:provider/provider.dart';
+import 'package:iskele360v7/providers/auth_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,8 +13,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  
-  final ApiService _apiService = ApiService();
+
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -32,10 +32,16 @@ class _LoginScreenState extends State<LoginScreen> {
       });
 
       try {
-        await _apiService.loginWithEmail(
-          email: _emailController.text,
-          password: _passwordController.text,
-        );
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final success = await authProvider.loginWithEmail(
+            _emailController.text, _passwordController.text);
+
+        if (!success) {
+          setState(() {
+            _errorMessage = authProvider.error;
+          });
+          return;
+        }
 
         if (mounted) {
           Navigator.pushReplacementNamed(context, '/home');
@@ -78,7 +84,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: const TextStyle(color: Colors.red),
                   ),
                 ),
-              
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -113,9 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ),
               ),
-              
               const SizedBox(height: 24),
-              
               TextFormField(
                 controller: _emailController,
                 decoration: const InputDecoration(
@@ -134,9 +137,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 16),
-              
               TextFormField(
                 controller: _passwordController,
                 decoration: const InputDecoration(
@@ -152,9 +153,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 24),
-              
               ElevatedButton.icon(
                 onPressed: _isLoading ? null : _login,
                 icon: const Icon(Icons.login),
@@ -171,16 +170,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
-              
               const SizedBox(height: 16),
-              
               TextButton(
                 onPressed: () {
                   Navigator.pushNamed(context, '/register');
                 },
                 child: const Text('Hesabınız yok mu? Kayıt olun'),
               ),
-              
               TextButton(
                 onPressed: () {
                   Navigator.pushNamed(context, '/main_login');

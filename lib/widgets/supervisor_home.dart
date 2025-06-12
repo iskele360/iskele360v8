@@ -30,9 +30,10 @@ class _SupervisorHomeState extends State<SupervisorHome> {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       await userProvider.getWorkers();
       await userProvider.getSuppliers();
-      
+
       // Puantaj verilerini yükle
-      final puantajProvider = Provider.of<PuantajProvider>(context, listen: false);
+      final puantajProvider =
+          Provider.of<PuantajProvider>(context, listen: false);
       await puantajProvider.getPuantajList();
     } catch (e) {
       // Hata göster
@@ -53,9 +54,9 @@ class _SupervisorHomeState extends State<SupervisorHome> {
     final authProvider = Provider.of<AuthProvider>(context);
     final userProvider = Provider.of<UserProvider>(context);
     final puantajProvider = Provider.of<PuantajProvider>(context);
-    
+
     final user = authProvider.currentUser;
-    
+
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(),
@@ -125,9 +126,9 @@ class _SupervisorHomeState extends State<SupervisorHome> {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             // İstatistikler
             const Text(
               'Özet',
@@ -172,9 +173,9 @@ class _SupervisorHomeState extends State<SupervisorHome> {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             // Hızlı Erişim
             const Text(
               'Hızlı Erişim',
@@ -184,7 +185,7 @@ class _SupervisorHomeState extends State<SupervisorHome> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             _buildActionButton(
               label: 'Yeni İşçi Oluştur',
               icon: Icons.person_add,
@@ -193,7 +194,7 @@ class _SupervisorHomeState extends State<SupervisorHome> {
                 _showCreateWorkerDialog(context);
               },
             ),
-            
+
             _buildActionButton(
               label: 'Yeni Puantaj Oluştur',
               icon: Icons.add_chart,
@@ -202,7 +203,7 @@ class _SupervisorHomeState extends State<SupervisorHome> {
                 Navigator.pushNamed(context, '/puantaj-create');
               },
             ),
-            
+
             _buildActionButton(
               label: 'Yeni Malzemeci Oluştur',
               icon: Icons.person_add_alt_1,
@@ -211,9 +212,9 @@ class _SupervisorHomeState extends State<SupervisorHome> {
                 _showCreateSupplierDialog(context);
               },
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             // Son puantajlar
             const Text(
               'Son Puantajlar',
@@ -223,24 +224,25 @@ class _SupervisorHomeState extends State<SupervisorHome> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             _buildRecentPuantajList(puantajProvider),
           ],
         ),
       ),
     );
   }
-  
+
   // Bugünkü puantaj sayısını hesapla
   int _getTodayPuantajCount(PuantajProvider provider) {
     final today = DateTime.now();
-    return provider.puantajList.where((p) => 
-      p.date.year == today.year && 
-      p.date.month == today.month && 
-      p.date.day == today.day
-    ).length;
+    return provider.puantajList
+        .where((p) =>
+            p.date.year == today.year &&
+            p.date.month == today.month &&
+            p.date.day == today.day)
+        .length;
   }
-  
+
   // İstatistik kartı
   Widget _buildStatCard({
     required String title,
@@ -289,7 +291,7 @@ class _SupervisorHomeState extends State<SupervisorHome> {
       ),
     );
   }
-  
+
   // Hızlı erişim butonu
   Widget _buildActionButton({
     required String label,
@@ -330,7 +332,8 @@ class _SupervisorHomeState extends State<SupervisorHome> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                const Icon(Icons.arrow_forward_ios,
+                    size: 16, color: Colors.grey),
               ],
             ),
           ),
@@ -338,11 +341,11 @@ class _SupervisorHomeState extends State<SupervisorHome> {
       ),
     );
   }
-  
+
   // Son puantajlar listesi
   Widget _buildRecentPuantajList(PuantajProvider provider) {
     final puantajList = provider.puantajList;
-    
+
     if (puantajList.isEmpty) {
       return const Card(
         child: Padding(
@@ -353,27 +356,31 @@ class _SupervisorHomeState extends State<SupervisorHome> {
         ),
       );
     }
-    
+
     // Son 5 puantajı göster
-    final recentPuantajList = puantajList.length > 5 
-        ? puantajList.sublist(0, 5) 
-        : puantajList;
-    
+    final recentPuantajList =
+        puantajList.length > 5 ? puantajList.sublist(0, 5) : puantajList;
+
     return Column(
       children: recentPuantajList.map((puantaj) {
+        final workerName = puantaj.worker != null
+            ? '${puantaj.worker!['firstName']} ${puantaj.worker!['lastName']}'
+            : 'İşçi';
+
         return Card(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             leading: CircleAvatar(
               backgroundColor: Colors.blue.shade100,
               child: const Icon(Icons.person, color: Colors.blue),
             ),
             title: Text(
-              puantaj.worker?.fullName ?? 'İşçi',
+              workerName,
               overflow: TextOverflow.ellipsis,
             ),
             subtitle: Text(
@@ -390,14 +397,14 @@ class _SupervisorHomeState extends State<SupervisorHome> {
       }).toList(),
     );
   }
-  
+
   // Yeni işçi oluşturma dialog'u
   void _showCreateWorkerDialog(BuildContext context) {
     final formKey = GlobalKey<FormState>();
     final firstNameController = TextEditingController();
     final lastNameController = TextEditingController();
     final passwordController = TextEditingController();
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -463,17 +470,18 @@ class _SupervisorHomeState extends State<SupervisorHome> {
           ElevatedButton(
             onPressed: () async {
               if (formKey.currentState!.validate()) {
-                final userProvider = Provider.of<UserProvider>(context, listen: false);
-                
+                final userProvider =
+                    Provider.of<UserProvider>(context, listen: false);
+
                 final success = await userProvider.createWorker(
                   firstName: firstNameController.text.trim(),
                   lastName: lastNameController.text.trim(),
                   password: passwordController.text,
                 );
-                
+
                 if (mounted) {
                   Navigator.pop(context);
-                  
+
                   if (success) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -484,7 +492,8 @@ class _SupervisorHomeState extends State<SupervisorHome> {
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(userProvider.errorMessage ?? 'İşçi oluşturulurken bir hata oluştu'),
+                        content: Text(userProvider.errorMessage ??
+                            'İşçi oluşturulurken bir hata oluştu'),
                         backgroundColor: Colors.red,
                       ),
                     );
@@ -498,14 +507,14 @@ class _SupervisorHomeState extends State<SupervisorHome> {
       ),
     );
   }
-  
+
   // Yeni malzemeci oluşturma dialog'u
   void _showCreateSupplierDialog(BuildContext context) {
     final formKey = GlobalKey<FormState>();
     final firstNameController = TextEditingController();
     final lastNameController = TextEditingController();
     final passwordController = TextEditingController();
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -571,17 +580,18 @@ class _SupervisorHomeState extends State<SupervisorHome> {
           ElevatedButton(
             onPressed: () async {
               if (formKey.currentState!.validate()) {
-                final userProvider = Provider.of<UserProvider>(context, listen: false);
-                
+                final userProvider =
+                    Provider.of<UserProvider>(context, listen: false);
+
                 final success = await userProvider.createSupplier(
                   firstName: firstNameController.text.trim(),
                   lastName: lastNameController.text.trim(),
                   password: passwordController.text,
                 );
-                
+
                 if (mounted) {
                   Navigator.pop(context);
-                  
+
                   if (success) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -592,7 +602,8 @@ class _SupervisorHomeState extends State<SupervisorHome> {
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(userProvider.errorMessage ?? 'Malzemeci oluşturulurken bir hata oluştu'),
+                        content: Text(userProvider.errorMessage ??
+                            'Malzemeci oluşturulurken bir hata oluştu'),
                         backgroundColor: Colors.red,
                       ),
                     );
@@ -606,4 +617,4 @@ class _SupervisorHomeState extends State<SupervisorHome> {
       ),
     );
   }
-} 
+}

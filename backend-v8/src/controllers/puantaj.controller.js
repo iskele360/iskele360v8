@@ -1,47 +1,167 @@
-const Puantaj = require('../models/puantaj.model');
-const User = require('../models/user.model');
-const { AppError, catchAsync } = require('../middleware/error.middleware');
-const redisService = require('../services/redis.service');
-const cloudinaryService = require('../services/cloudinary.service');
+import { AppError, catchAsync } from '../middleware/error.middleware.js';
+import cloudinaryService from '../services/cloudinary.service.js';
+import redisService from '../services/redis.service.js';
+import Puantaj from '../models/puantaj.model.js';
 
-exports.createPuantaj = catchAsync(async (req, res, next) => {
-  // 1) İşçi kontrolü
-  const isci = await User.findById(req.body.isciId);
-  if (!isci || isci.role !== 'isci') {
-    return next(new AppError('Geçersiz işçi ID', 400));
+// Create puantaj record
+export const createPuantaj = catchAsync(async (req, res, next) => {
+  const { isciId, giris } = req.body;
+
+  // Check if worker already has an active entry for today
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const existingEntry = await Puantaj.findOne({
+    isciId,
+    tarih: {
+      $gte: today,
+      $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+    },
+    durum: { $ne: 'iptal' }
+  });
+
+  if (existingEntry) {
+    return next(new AppError('Bu işçi için bugün zaten bir puantaj kaydı mevcut', 400));
   }
 
-  // 2) Puantaj oluştur
+  // Upload entry photo if provided
+  let fotoData = {};
+  if (req.file) {
+    try {
+      const result = await cloudinaryService.uploadFile(req.file, 'iskele360/puantaj');
+      fotoData = {
+        url: result.url,
+        publicId: result.publicId,
+        timestamp: new Date()
+      };
+    } catch (error) {
+      return next(new AppError('Fotoğraf yükleme başarısız', 500));
+    }
+  }
+
+  // Create puantaj record
   const puantaj = await Puantaj.create({
-    ...req.body,
+    isciId,
     puantajciId: req.user._id,
+    projeId: req.body.projeId,
+    tarih: new Date(),
+    giris: {
+      saat: giris.saat,
+      konum: {
+        type: 'Point',
+        coordinates: [
+          parseFloat(giris.konum.longitude),
+          parseFloat(giris.konum.latitude)
+        ]
+      },
+      foto: fotoData
+    },
+    durum: 'giris',
+    notlar: req.body.notlar,
     meta: {
-      deviceInfo: req.body.deviceInfo,
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent']
+      olusturan: req.user._id
     }
   });
 
-  // 3) Cache'i temizle
-  await redisService.invalidatePuantajCache(req.body.isciId);
-  await redisService.invalidatePuantajCache(req.user._id);
+  // Invalidate cache
+  await redisService.invalidatePattern(`puantaj:${isciId}:*`);
 
   res.status(201).json({
     status: 'success',
-    data: {
-      puantaj
-    }
+    data: { puantaj }
   });
 });
 
-exports.getPuantajList = catchAsync(async (req, res, next) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const skip = (page - 1) * limit;
+// Record exit
+export const recordExit = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { cikis } = req.body;
 
-  // 1) Cache kontrolü
-  const cacheKey = `puantaj:list:${req.user._id}:${page}:${limit}`;
-  const cachedData = await redisService.get(cacheKey);
+  const puantaj = await Puantaj.findOne({
+    _id: id,
+    durum: 'giris'
+  });
+
+  if (!puantaj) {
+    return next(new AppError('Aktif puantaj kaydı bulunamadı', 404));
+  }
+
+  // Upload exit photo if provided
+  let fotoData = {};
+  if (req.file) {
+    try {
+      const result = await cloudinaryService.uploadFile(req.file, 'iskele360/puantaj');
+      fotoData = {
+        url: result.url,
+        publicId: result.publicId,
+        timestamp: new Date()
+      };
+    } catch (error) {
+      return next(new AppError('Fotoğraf yükleme başarısız', 500));
+    }
+  }
+
+  // Update puantaj record
+  puantaj.cikis = {
+    saat: cikis.saat,
+    konum: {
+      type: 'Point',
+      coordinates: [
+        parseFloat(cikis.konum.longitude),
+        parseFloat(cikis.konum.latitude)
+      ]
+    },
+    foto: fotoData
+  };
+  puantaj.durum = 'cikis';
+  puantaj.meta.guncelleyen = req.user._id;
+  puantaj.meta.guncellenmeTarihi = new Date();
+
+  await puantaj.save();
+
+  // Invalidate cache
+  await redisService.invalidatePattern(`puantaj:${puantaj.isciId}:*`);
+
+  res.status(200).json({
+    status: 'success',
+    data: { puantaj }
+  });
+});
+
+// Cancel puantaj record
+export const cancelPuantaj = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { iptalNedeni } = req.body;
+
+  const puantaj = await Puantaj.findById(id);
+
+  if (!puantaj) {
+    return next(new AppError('Puantaj kaydı bulunamadı', 404));
+  }
+
+  puantaj.durum = 'iptal';
+  puantaj.meta.iptalNedeni = iptalNedeni;
+  puantaj.meta.iptalEden = req.user._id;
+  puantaj.meta.iptalTarihi = new Date();
+
+  await puantaj.save();
+
+  // Invalidate cache
+  await redisService.invalidatePattern(`puantaj:${puantaj.isciId}:*`);
+
+  res.status(200).json({
+    status: 'success',
+    data: { puantaj }
+  });
+});
+
+// Get worker's daily records
+export const getWorkerDailyRecords = catchAsync(async (req, res, next) => {
+  const { isciId, date } = req.params;
+
+  // Try to get from cache
+  const cacheKey = `puantaj:${isciId}:${date}`;
+  const cachedData = await redisService.getCache(cacheKey);
 
   if (cachedData) {
     return res.status(200).json({
@@ -50,231 +170,112 @@ exports.getPuantajList = catchAsync(async (req, res, next) => {
     });
   }
 
-  // 2) Filtreleme
-  const filter = {};
-  
-  if (req.user.role === 'isci') {
-    filter.isciId = req.user._id;
-  } else if (req.user.role === 'puantajci') {
-    filter.puantajciId = req.user._id;
-  }
+  const queryDate = new Date(date);
+  queryDate.setHours(0, 0, 0, 0);
 
-  if (req.query.baslangicTarihi && req.query.bitisTarihi) {
-    filter.tarih = {
-      $gte: new Date(req.query.baslangicTarihi),
-      $lte: new Date(req.query.bitisTarihi)
-    };
-  }
-
-  if (req.query.durum) {
-    filter.durum = req.query.durum;
-  }
-
-  // 3) Puantajları getir
-  const puantajlar = await Puantaj.find(filter)
-    .sort({ tarih: -1, createdAt: -1 })
-    .skip(skip)
-    .limit(limit)
-    .populate('worker', 'firstName lastName code')
-    .populate('supervisor', 'firstName lastName');
-
-  const total = await Puantaj.countDocuments(filter);
-
-  // 4) Response'u cache'le
-  const response = {
-    status: 'success',
-    results: puantajlar.length,
-    pagination: {
-      page,
-      limit,
-      total,
-      pages: Math.ceil(total / limit)
-    },
-    data: {
-      puantajlar
+  const records = await Puantaj.find({
+    isciId,
+    tarih: {
+      $gte: queryDate,
+      $lt: new Date(queryDate.getTime() + 24 * 60 * 60 * 1000)
     }
-  };
+  }).populate('projeId', 'ad');
 
-  await redisService.set(cacheKey, response, 300); // 5 dakika cache
-
-  res.status(200).json(response);
-});
-
-exports.getPuantaj = catchAsync(async (req, res, next) => {
-  const puantaj = await Puantaj.findById(req.params.id)
-    .populate('worker', 'firstName lastName code')
-    .populate('supervisor', 'firstName lastName');
-
-  if (!puantaj) {
-    return next(new AppError('Puantaj bulunamadı', 404));
-  }
-
-  // Yetki kontrolü
-  if (
-    req.user.role !== 'admin' &&
-    puantaj.isciId.toString() !== req.user._id.toString() &&
-    puantaj.puantajciId.toString() !== req.user._id.toString()
-  ) {
-    return next(new AppError('Bu puantajı görüntüleme yetkiniz yok', 403));
-  }
+  // Cache the results
+  await redisService.setCache(cacheKey, records, 3600); // Cache for 1 hour
 
   res.status(200).json({
     status: 'success',
-    data: {
-      puantaj
-    }
+    data: { records }
   });
 });
 
-exports.updatePuantaj = catchAsync(async (req, res, next) => {
-  // 1) Puantajı bul
-  const puantaj = await Puantaj.findById(req.params.id);
+// Get worker's monthly stats
+export const getWorkerMonthlyStats = catchAsync(async (req, res, next) => {
+  const { isciId, year, month } = req.params;
 
-  if (!puantaj) {
-    return next(new AppError('Puantaj bulunamadı', 404));
-  }
+  // Try to get from cache
+  const cacheKey = `puantaj:${isciId}:${year}-${month}:stats`;
+  const cachedStats = await redisService.getCache(cacheKey);
 
-  // 2) Yetki kontrolü
-  if (
-    req.user.role !== 'admin' &&
-    puantaj.puantajciId.toString() !== req.user._id.toString()
-  ) {
-    return next(new AppError('Bu puantajı düzenleme yetkiniz yok', 403));
-  }
-
-  // 3) Güncelleme
-  Object.assign(puantaj, req.body);
-  
-  // Değişiklik geçmişi ekle
-  puantaj.degisiklikGecmisi.push({
-    degistirenId: req.user._id,
-    aciklama: req.body.degisiklikAciklamasi || 'Puantaj güncellendi'
-  });
-
-  await puantaj.save();
-
-  // 4) Cache'i temizle
-  await redisService.invalidatePuantajCache(puantaj.isciId);
-  await redisService.invalidatePuantajCache(puantaj.puantajciId);
-
-  res.status(200).json({
-    status: 'success',
-    data: {
-      puantaj
-    }
-  });
-});
-
-exports.deletePuantaj = catchAsync(async (req, res, next) => {
-  const puantaj = await Puantaj.findById(req.params.id);
-
-  if (!puantaj) {
-    return next(new AppError('Puantaj bulunamadı', 404));
-  }
-
-  // Yetki kontrolü
-  if (
-    req.user.role !== 'admin' &&
-    puantaj.puantajciId.toString() !== req.user._id.toString()
-  ) {
-    return next(new AppError('Bu puantajı silme yetkiniz yok', 403));
-  }
-
-  // Fotoğrafları Cloudinary'den sil
-  if (puantaj.fotograf && puantaj.fotograf.length > 0) {
-    const publicIds = puantaj.fotograf.map(f => f.publicId);
-    await cloudinaryService.deleteMultipleImages(publicIds);
-  }
-
-  await puantaj.remove();
-
-  // Cache'i temizle
-  await redisService.invalidatePuantajCache(puantaj.isciId);
-  await redisService.invalidatePuantajCache(puantaj.puantajciId);
-
-  res.status(204).json({
-    status: 'success',
-    data: null
-  });
-});
-
-exports.uploadFotograf = catchAsync(async (req, res, next) => {
-  if (!req.files || !req.files.length) {
-    return next(new AppError('Lütfen fotoğraf yükleyin', 400));
-  }
-
-  const puantaj = await Puantaj.findById(req.params.id);
-
-  if (!puantaj) {
-    return next(new AppError('Puantaj bulunamadı', 404));
-  }
-
-  // Yetki kontrolü
-  if (
-    req.user.role !== 'admin' &&
-    puantaj.puantajciId.toString() !== req.user._id.toString()
-  ) {
-    return next(new AppError('Bu puantaja fotoğraf ekleme yetkiniz yok', 403));
-  }
-
-  // Fotoğrafları Cloudinary'e yükle
-  const uploadPromises = req.files.map(file =>
-    cloudinaryService.uploadImage(file.path, `puantaj/${puantaj._id}`)
-  );
-
-  const uploadedImages = await Promise.all(uploadPromises);
-
-  // Puantaja fotoğrafları ekle
-  uploadedImages.forEach(img => {
-    puantaj.fotograf.push({
-      url: img.url,
-      publicId: img.publicId
+  if (cachedStats) {
+    return res.status(200).json({
+      status: 'success',
+      data: cachedStats
     });
-  });
+  }
 
-  await puantaj.save();
+  const stats = await Puantaj.getWorkerMonthlyStats(isciId, parseInt(year), parseInt(month));
+
+  // Cache the results
+  await redisService.setCache(cacheKey, stats, 3600); // Cache for 1 hour
 
   res.status(200).json({
     status: 'success',
-    data: {
-      puantaj
-    }
+    data: { stats }
   });
 });
 
-exports.deleteFotograf = catchAsync(async (req, res, next) => {
-  const { id, fotografId } = req.params;
+// Get daily project stats
+export const getDailyProjectStats = catchAsync(async (req, res, next) => {
+  const { date } = req.params;
 
-  const puantaj = await Puantaj.findById(id);
+  // Try to get from cache
+  const cacheKey = `puantaj:projects:${date}:stats`;
+  const cachedStats = await redisService.getCache(cacheKey);
 
-  if (!puantaj) {
-    return next(new AppError('Puantaj bulunamadı', 404));
+  if (cachedStats) {
+    return res.status(200).json({
+      status: 'success',
+      data: cachedStats
+    });
   }
 
-  // Yetki kontrolü
-  if (
-    req.user.role !== 'admin' &&
-    puantaj.puantajciId.toString() !== req.user._id.toString()
-  ) {
-    return next(new AppError('Bu puantajdan fotoğraf silme yetkiniz yok', 403));
-  }
+  const stats = await Puantaj.getDailyStats(new Date(date));
 
-  // Fotoğrafı bul
-  const fotograf = puantaj.fotograf.id(fotografId);
+  // Cache the results
+  await redisService.setCache(cacheKey, stats, 1800); // Cache for 30 minutes
 
-  if (!fotograf) {
-    return next(new AppError('Fotoğraf bulunamadı', 404));
-  }
-
-  // Cloudinary'den sil
-  await cloudinaryService.deleteImage(fotograf.publicId);
-
-  // Puantajdan sil
-  fotograf.remove();
-  await puantaj.save();
-
-  res.status(204).json({
+  res.status(200).json({
     status: 'success',
-    data: null
+    data: { stats }
+  });
+});
+
+// Get records by location
+export const getRecordsByLocation = catchAsync(async (req, res, next) => {
+  const { longitude, latitude, distance = 1000 } = req.query; // distance in meters
+
+  const records = await Puantaj.find({
+    $or: [
+      {
+        'giris.konum': {
+          $near: {
+            $geometry: {
+              type: 'Point',
+              coordinates: [parseFloat(longitude), parseFloat(latitude)]
+            },
+            $maxDistance: distance
+          }
+        }
+      },
+      {
+        'cikis.konum': {
+          $near: {
+            $geometry: {
+              type: 'Point',
+              coordinates: [parseFloat(longitude), parseFloat(latitude)]
+            },
+            $maxDistance: distance
+          }
+        }
+      }
+    ]
+  }).populate('isciId', 'firstName lastName');
+
+  res.status(200).json({
+    status: 'success',
+    results: records.length,
+    data: { records }
   });
 });

@@ -3,26 +3,29 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:iskele360v7/models/models.dart';
+import 'package:iskele360v7/models/inventory_model.dart';
+import 'package:iskele360v7/models/puantaj_model.dart';
+import 'package:iskele360v7/models/supplier_model.dart';
+import 'package:iskele360v7/models/user_model.dart';
+import 'package:iskele360v7/models/worker_model.dart';
 import 'package:iskele360v7/utils/constants.dart';
 import 'package:logger/logger.dart';
 
 class ApiService {
   static final ApiService _instance = ApiService._internal();
-  
+
   factory ApiService() {
     return _instance;
   }
-  
+
   final Dio _dio = Dio();
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   final Logger _logger = Logger();
-  
+
   ApiService._internal() {
     _initDio();
   }
-  
-  // Dio istemcisini başlat ve interceptor'ları ayarla
+
   void _initDio() {
     _dio.options.baseUrl = AppConstants.apiBaseUrl;
     _dio.options.connectTimeout = const Duration(seconds: 10);
@@ -31,8 +34,7 @@ class ApiService {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
-    
-    // Request interceptor - her istekte token kontrolü yap
+
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
@@ -48,8 +50,7 @@ class ApiService {
         },
       ),
     );
-    
-    // Log interceptor - DEBUG modda request ve responseları logla
+
     if (kDebugMode) {
       _dio.interceptors.add(LogInterceptor(
         requestBody: true,
@@ -57,9 +58,9 @@ class ApiService {
       ));
     }
   }
-  
-  // GET isteği
-  Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) async {
+
+  Future<Response> get(String path,
+      {Map<String, dynamic>? queryParameters}) async {
     try {
       final response = await _dio.get(
         path,
@@ -73,9 +74,9 @@ class ApiService {
       rethrow;
     }
   }
-  
-  // POST isteği
-  Future<Response> post(String path, {dynamic data, Map<String, dynamic>? queryParameters}) async {
+
+  Future<Response> post(String path,
+      {dynamic data, Map<String, dynamic>? queryParameters}) async {
     try {
       final response = await _dio.post(
         path,
@@ -90,9 +91,9 @@ class ApiService {
       rethrow;
     }
   }
-  
-  // PUT isteği
-  Future<Response> put(String path, {dynamic data, Map<String, dynamic>? queryParameters}) async {
+
+  Future<Response> put(String path,
+      {dynamic data, Map<String, dynamic>? queryParameters}) async {
     try {
       final response = await _dio.put(
         path,
@@ -107,9 +108,9 @@ class ApiService {
       rethrow;
     }
   }
-  
-  // DELETE isteği
-  Future<Response> delete(String path, {dynamic data, Map<String, dynamic>? queryParameters}) async {
+
+  Future<Response> delete(String path,
+      {dynamic data, Map<String, dynamic>? queryParameters}) async {
     try {
       final response = await _dio.delete(
         path,
@@ -124,13 +125,11 @@ class ApiService {
       rethrow;
     }
   }
-  
-  // Token'ı ayarla
+
   void setToken(String token) {
     _dio.options.headers['Authorization'] = 'Bearer $token';
   }
-  
-  // Hata yönetimi
+
   void _handleApiError(DioException error) {
     if (error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.receiveTimeout ||
@@ -139,11 +138,9 @@ class ApiService {
     } else if (error.type == DioExceptionType.badResponse) {
       final statusCode = error.response?.statusCode;
       final responseData = error.response?.data;
-      
+
       if (statusCode == 401) {
         _logger.e('Yetkilendirme hatası: Oturum süresi dolmuş olabilir');
-        // Burada oturum süresinin dolduğuna dair işlemler yapılabilir
-        // Örneğin: AuthProvider üzerinden logout() çağrılabilir
       } else {
         _logger.e('Sunucu hatası ($statusCode): $responseData');
       }
@@ -153,363 +150,208 @@ class ApiService {
       _logger.e('API hatası: ${error.message}');
     }
   }
-  
-  // Token kaydetme
+
   Future<void> saveToken(String token) async {
     await _secureStorage.write(key: AppConstants.tokenKey, value: token);
     setToken(token);
   }
-  
-  // Token silme
+
   Future<void> deleteToken() async {
     await _secureStorage.delete(key: AppConstants.tokenKey);
     _dio.options.headers.remove('Authorization');
   }
-  
-  // Token varlığını kontrol etme (oturum açık mı?)
+
   Future<bool> hasToken() async {
     final token = await _secureStorage.read(key: AppConstants.tokenKey);
     return token != null && token.isNotEmpty;
   }
-  
-  // Kullanıcı kaydı
-  Future<User> register({
-    required String name,
-    required String surname,
-    required String email,
-    required String password,
-    String? role,
-  }) async {
+
+  // Auth Methods
+  Future<User> getUserData() async {
     try {
-      final response = await _dio.post(
-        '/auth/register',
-        data: {
-          'name': name,
-          'surname': surname,
-          'email': email,
-          'password': password,
-          if (role != null) 'role': role,
-        },
-      );
-      
-      final data = response.data;
-      
-      // Token'ı kaydet
-      if (data['token'] != null) {
-        await saveToken(data['token']);
-      }
-      
-      return User.fromJson(data['data']);
-    } on DioException catch (e) {
-      throw _formatError(e);
+      final response = await get('/users/me');
+      return User.fromJson(response.data['data']);
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // Puantajcı (supervisor) kaydı
-  Future<User> registerSupervisor({
+
+  Future<User> loginWithSupplierCode({
     required String name,
     required String surname,
-    required String email,
-    required String password,
-  }) async {
-    return register(
-      name: name,
-      surname: surname,
-      email: email,
-      password: password,
-      role: AppConstants.roleSupervisor,
-    );
-  }
-  
-  // Kullanıcı girişi (email ile)
-  Future<User> loginWithEmail({
-    required String email,
-    required String password,
-  }) async {
-    try {
-      final response = await _dio.post(
-        '/auth/login',
-        data: {
-          'email': email,
-          'password': password,
-        },
-      );
-      
-      final data = response.data;
-      
-      // Token'ı kaydet
-      if (data['token'] != null) {
-        await saveToken(data['token']);
-      }
-      
-      return User.fromJson(data['data']);
-    } on DioException catch (e) {
-      throw _formatError(e);
-    }
-  }
-  
-  // Kullanıcı girişi (kod ile - işçi ve malzemeci için)
-  Future<User> loginWithCode({
     required String code,
-    required String password,
   }) async {
     try {
-      final response = await _dio.post(
-        '/auth/login',
-        data: {
-          'code': code,
-          'password': password,
-        },
-      );
-      
-      final data = response.data;
-      
-      // Token'ı kaydet
-      if (data['token'] != null) {
-        await saveToken(data['token']);
+      final response = await post('/auth/supplier/login', data: {
+        'name': name,
+        'surname': surname,
+        'code': code,
+      });
+      if (response.data['token'] != null) {
+        await saveToken(response.data['token']);
       }
-      
-      return User.fromJson(data['data']);
-    } on DioException catch (e) {
-      throw _formatError(e);
+      return User.fromJson(response.data['data']);
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // Kullanıcı çıkışı
+
+  Future<User> loginWithWorkerCode({
+    required String name,
+    required String surname,
+    required String code,
+  }) async {
+    try {
+      final response = await post('/auth/worker/login', data: {
+        'name': name,
+        'surname': surname,
+        'code': code,
+      });
+      if (response.data['token'] != null) {
+        await saveToken(response.data['token']);
+      }
+      return User.fromJson(response.data['data']);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   Future<void> logout() async {
-    await deleteToken();
-  }
-  
-  // Kullanıcı profili alma
-  Future<User> getUserProfile() async {
     try {
-      final response = await _dio.get('/users/profile');
-      return User.fromJson(response.data['data']);
-    } on DioException catch (e) {
-      throw _formatError(e);
-    }
-  }
-  
-  // Kendi hesabını silme
-  Future<void> deleteAccount() async {
-    try {
-      await _dio.delete('/users/delete');
+      await post('/auth/logout');
       await deleteToken();
-    } on DioException catch (e) {
-      throw _formatError(e);
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // Başka bir kullanıcıyı silme (puantajcı için)
-  Future<void> deleteUser(String userId) async {
+
+  // Worker Methods
+  Future<List<Worker>> getAllWorkers() async {
     try {
-      await _dio.delete('/users/delete/$userId');
-    } on DioException catch (e) {
-      throw _formatError(e);
+      final response = await get('/workers');
+      final List<dynamic> workers = response.data['data'];
+      return workers.map((w) => Worker.fromJson(w)).toList();
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // Kullanıcı profilini güncelleme
-  Future<User> updateProfile({
-    String? name,
-    String? surname,
-    String? email,
-  }) async {
+
+  Future<List<Worker>> getWorkers() async {
     try {
-      final response = await _dio.put(
-        '/users/update',
-        data: {
-          if (name != null) 'name': name,
-          if (surname != null) 'surname': surname,
-          if (email != null) 'email': email,
-        },
-      );
-      
-      return User.fromJson(response.data['data']);
-    } on DioException catch (e) {
-      throw _formatError(e);
+      final response = await get('/workers');
+      final List<dynamic> workers = response.data['data'];
+      return workers.map((w) => Worker.fromJson(w)).toList();
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // Şifre güncelleme
-  Future<void> updatePassword({
-    required String currentPassword,
-    required String newPassword,
-  }) async {
+
+  Future<Worker> addWorker(Map<String, dynamic> data) async {
     try {
-      await _dio.put(
-        '/users/update-password',
-        data: {
-          'currentPassword': currentPassword,
-          'newPassword': newPassword,
-        },
-      );
-    } on DioException catch (e) {
-      throw _formatError(e);
+      final response = await post('/workers', data: data);
+      return Worker.fromJson(response.data['data']);
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // Tüm kullanıcıları getir (puantajcı için)
-  Future<List<User>> getAllUsers() async {
+
+  // Inventory Methods
+  Future<List<Inventory>> getWorkerInventories(String workerId) async {
     try {
-      final response = await _dio.get('/users');
-      
-      final List<dynamic> userList = response.data['data'];
-      return userList.map((user) => User.fromJson(user)).toList();
-    } on DioException catch (e) {
-      throw _formatError(e);
+      final response = await get('/inventories/worker/$workerId');
+      final List<dynamic> inventories = response.data['data'];
+      return inventories.map((i) => Inventory.fromJson(i)).toList();
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // Puantaj kaydı oluştur
-  Future<Puantaj> createPuantaj({
-    required String isciId,
-    required String baslangicSaati,
-    required String bitisSaati,
-    required double calismaSuresi,
-    required String projeId,
-    required String projeBilgisi,
-    String? aciklama,
-    DateTime? tarih,
-  }) async {
+
+  Future<Inventory> addInventory(Map<String, dynamic> data) async {
     try {
-      final response = await _dio.post(
-        '/puantaj',
-        data: {
-          'isciId': isciId,
-          'baslangicSaati': baslangicSaati,
-          'bitisSaati': bitisSaati,
-          'calismaSuresi': calismaSuresi,
-          'projeId': projeId,
-          'projeBilgisi': projeBilgisi,
-          if (aciklama != null) 'aciklama': aciklama,
-          if (tarih != null) 'tarih': tarih.toIso8601String(),
-        },
-      );
-      
-      return Puantaj.fromJson(response.data['data']);
-    } on DioException catch (e) {
-      throw _formatError(e);
+      final response = await post('/inventories', data: data);
+      return Inventory.fromJson(response.data['data']);
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // Puantaj kaydı güncelle
-  Future<Puantaj> updatePuantaj({
-    required String puantajId,
-    String? baslangicSaati,
-    String? bitisSaati,
-    double? calismaSuresi,
-    String? projeId,
-    String? projeBilgisi,
-    String? aciklama,
-    String? durum,
-  }) async {
+
+  Future<List<Inventory>> getCurrentWorkerInventories() async {
     try {
-      final response = await _dio.put(
-        '/puantaj/$puantajId',
-        data: {
-          if (baslangicSaati != null) 'baslangicSaati': baslangicSaati,
-          if (bitisSaati != null) 'bitisSaati': bitisSaati,
-          if (calismaSuresi != null) 'calismaSuresi': calismaSuresi,
-          if (projeId != null) 'projeId': projeId,
-          if (projeBilgisi != null) 'projeBilgisi': projeBilgisi,
-          if (aciklama != null) 'aciklama': aciklama,
-          if (durum != null) 'durum': durum,
-        },
-      );
-      
-      return Puantaj.fromJson(response.data['data']);
-    } on DioException catch (e) {
-      throw _formatError(e);
+      final response = await get('/inventories/current');
+      final List<dynamic> inventories = response.data['data'];
+      return inventories.map((i) => Inventory.fromJson(i)).toList();
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // Puantaj kaydı sil
-  Future<void> deletePuantaj(String puantajId) async {
+
+  // Supplier Methods
+  Future<List<Supplier>> getSuppliers() async {
     try {
-      await _dio.delete('/puantaj/$puantajId');
-    } on DioException catch (e) {
-      throw _formatError(e);
+      final response = await get('/suppliers');
+      final List<dynamic> suppliers = response.data['data'];
+      return suppliers.map((s) => Supplier.fromJson(s)).toList();
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // İşçinin puantaj kayıtlarını getir
-  Future<List<Puantaj>> getIsciPuantajlari(String isciId) async {
+
+  Future<Supplier> addSupplier(Map<String, dynamic> data) async {
     try {
-      final response = await _dio.get('/puantaj/isci/$isciId');
-      
-      final List<dynamic> puantajList = response.data['data'];
-      return puantajList.map((puantaj) => Puantaj.fromJson(puantaj)).toList();
-    } on DioException catch (e) {
-      throw _formatError(e);
+      final response = await post('/suppliers', data: data);
+      return Supplier.fromJson(response.data['data']);
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // Puantajcının tüm puantaj kayıtlarını getir
+
+  // Puantaj Methods
   Future<List<Puantaj>> getPuantajciPuantajlari() async {
     try {
-      final response = await _dio.get('/puantaj/puantajci');
-      
+      final response = await get('/puantaj/supervisor');
       final List<dynamic> puantajList = response.data['data'];
-      return puantajList.map((puantaj) => Puantaj.fromJson(puantaj)).toList();
-    } on DioException catch (e) {
-      throw _formatError(e);
+      return puantajList.map((p) => Puantaj.fromJson(p)).toList();
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // Zimmet oluştur
-  Future<Zimmet> createZimmet({
-    required String supervisorId,
-    required String supplierId,
-    required String workerId,
-    required String itemName,
-    required int quantity,
-    required String date,
-  }) async {
+
+  Future<List<Puantaj>> getIsciPuantajlari(String workerId) async {
     try {
-      final response = await _dio.post(
-        '/zimmet',
-        data: {
-          'supervisorId': supervisorId,
-          'supplierId': supplierId,
-          'workerId': workerId,
-          'itemName': itemName,
-          'quantity': quantity,
-          'date': date,
-        },
-      );
-      
-      return Zimmet.fromJson(response.data['data']);
-    } on DioException catch (e) {
-      throw _formatError(e);
+      final response = await get('/puantaj/worker/$workerId');
+      final List<dynamic> puantajList = response.data['data'];
+      return puantajList.map((p) => Puantaj.fromJson(p)).toList();
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // Zimmet listesini getir
-  Future<List<Zimmet>> getZimmetler() async {
+
+  Future<Puantaj> createPuantaj(Map<String, dynamic> data) async {
     try {
-      final response = await _dio.get('/zimmet');
-      
-      final List<dynamic> zimmetList = response.data['data'];
-      return zimmetList.map((zimmet) => Zimmet.fromJson(zimmet)).toList();
-    } on DioException catch (e) {
-      throw _formatError(e);
+      final response = await post('/puantaj', data: data);
+      return Puantaj.fromJson(response.data['data']);
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // İşçinin zimmetlerini getir
-  Future<List<Zimmet>> getIsciZimmetleri(String workerId) async {
+
+  Future<Puantaj> updatePuantaj(String id, Map<String, dynamic> data) async {
     try {
-      final response = await _dio.get('/zimmet/isci/$workerId');
-      
-      final List<dynamic> zimmetList = response.data['data'];
-      return zimmetList.map((zimmet) => Zimmet.fromJson(zimmet)).toList();
-    } on DioException catch (e) {
-      throw _formatError(e);
+      final response = await put('/puantaj/$id', data: data);
+      return Puantaj.fromJson(response.data['data']);
+    } catch (e) {
+      rethrow;
     }
   }
-  
-  // Bir DioException'ı kullanıcı dostu hata mesajına dönüştür
+
+  Future<void> deletePuantaj(String id) async {
+    try {
+      await delete('/puantaj/$id');
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   String _formatError(DioException e) {
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.receiveTimeout ||
@@ -518,7 +360,7 @@ class ApiService {
     } else if (e.type == DioExceptionType.badResponse) {
       final statusCode = e.response?.statusCode;
       final responseData = e.response?.data;
-      
+
       if (statusCode == 401) {
         return 'Oturum süreniz dolmuş. Lütfen tekrar giriş yapın.';
       } else if (statusCode == 403) {
@@ -539,4 +381,4 @@ class ApiService {
       return 'Bir hata oluştu: ${e.message}';
     }
   }
-} 
+}
