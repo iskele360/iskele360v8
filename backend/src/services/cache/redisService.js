@@ -42,11 +42,6 @@ const initRedis = async () => {
     redisClient = redis.createClient({
       url: REDIS_URL,
       socket: {
-        ...(isTLS && {
-          tls: true,
-          rejectUnauthorized: false,
-          servername: new URL(REDIS_URL).hostname
-        }),
         connectTimeout: 10000,
         reconnectStrategy: (retries) => {
           const delay = Math.min(retries * 50, 3000);
