@@ -29,15 +29,21 @@ const initRedis = async () => {
 
   console.log('Redis bağlantı ayarları:', {
     url: REDIS_URL,
-    enabled: REDIS_ENABLED
+    enabled: REDIS_ENABLED,
+    isTLS: REDIS_URL.startsWith('rediss://')
   });
 
   try {
+    // URL protokolüne göre TLS ayarı
+    const isTLS = REDIS_URL.startsWith('rediss://');
+    
     redisClient = redis.createClient({
       url: REDIS_URL,
       socket: {
-        tls: true,
-        rejectUnauthorized: false, // Render'ın self-signed sertifikası için
+        ...(isTLS ? {
+          tls: true,
+          rejectUnauthorized: false // Render'ın self-signed sertifikası için
+        } : {}),
         connectTimeout: 10000,
         reconnectStrategy: (retries) => Math.min(retries * 50, 3000)
       }
