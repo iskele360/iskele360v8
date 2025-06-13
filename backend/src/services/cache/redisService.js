@@ -11,6 +11,15 @@ const cacheService = require('./cacheService');
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const REDIS_ENABLED = process.env.REDIS_ENABLED === 'true';
 
+// Debug için environment variables
+console.log('Environment Variables:', {
+  REDIS_URL_EXISTS: !!process.env.REDIS_URL,
+  REDIS_URL_VALUE: process.env.REDIS_URL ? process.env.REDIS_URL.replace(/\/\/.*@/, '//***@') : 'not set',
+  REDIS_ENABLED_RAW: process.env.REDIS_ENABLED,
+  REDIS_ENABLED_PARSED: REDIS_ENABLED,
+  NODE_ENV: process.env.NODE_ENV
+});
+
 // Redis istemcisi
 let redisClient = null;
 
@@ -28,27 +37,11 @@ const initRedis = async () => {
   }
 
   try {
-    // URL protokolüne göre TLS ayarı
-    const isTLS = REDIS_URL.startsWith('rediss://');
+    console.log('Redis bağlantısı başlatılıyor...');
     
-    console.log('Redis bağlantı ayarları:', {
-      url: REDIS_URL.replace(/\/\/.*@/, '//***@'), // Hassas bilgileri gizle
-      enabled: REDIS_ENABLED,
-      isTLS: isTLS,
-      mode: isTLS ? 'SSL/TLS' : 'Standard'
-    });
-
-    // Redis client oluştur
+    // En basit haliyle Redis client
     redisClient = redis.createClient({
-      url: REDIS_URL,
-      socket: {
-        connectTimeout: 10000,
-        reconnectStrategy: (retries) => {
-          const delay = Math.min(retries * 50, 3000);
-          console.log(`Redis yeniden bağlanma denemesi ${retries}, ${delay}ms sonra`);
-          return delay;
-        }
-      }
+      url: REDIS_URL
     });
 
     // Bağlantı olaylarını dinle
@@ -67,13 +60,10 @@ const initRedis = async () => {
         code: err.code,
         syscall: err.syscall,
         hostname: err.hostname,
-        fatal: err.fatal
+        fatal: err.fatal,
+        stack: err.stack // Stack trace eklendi
       });
       redisConnected = false;
-    });
-
-    redisClient.on('reconnecting', () => {
-      console.log('Redis yeniden bağlanıyor...');
     });
 
     redisClient.on('end', () => {
@@ -82,16 +72,16 @@ const initRedis = async () => {
     });
 
     // Bağlantıyı aç
-    console.log('Redis bağlantısı açılıyor...');
     await redisClient.connect();
-
-    // Bağlantıyı test et
-    console.log('Redis ping testi yapılıyor...');
+    console.log('Redis bağlantısı açıldı, ping testi yapılıyor...');
+    
+    // Ping testi
     const pingResult = await redisClient.ping();
-    console.log('Redis ping sonucu:', pingResult);
+    console.log('Redis ping başarılı:', pingResult);
     
   } catch (err) {
     console.error('Redis bağlantısı kurulamadı:', {
+      name: err.name,
       message: err.message,
       code: err.code,
       syscall: err.syscall,
