@@ -1,7 +1,9 @@
 {
+  "name": "iskele360-backend",
+  "version": "1.0.0",
   "scripts": {
     "build": "npm install",
-    "start": "node backend/src/index.js"
+    "start": "node backend/src/server.js"
   },
   "dependencies": {
     "socket.io": "^4.8.1"
