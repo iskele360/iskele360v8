@@ -1,40 +1,35 @@
 version: '3.8'
 
 services:
-  api:
+  web:
     build: .
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
+      - PORT=3000
       - DB_HOST=dpg-d6ikbp5pdvs73fc5pig-a
       - DB_PORT=5432
       - DB_NAME=iskele360_db_v8
       - DB_USER=iskele360_db_v8_user
-      - JWT_SECRET=baranreisgizlikey
-      - JWT_EXPIRES_IN=24h
-      - REDIS_HOST=red-cjvvvvvvvvvvvvvvvvvvvvvvvv.redis.render.com
-      - REDIS_PORT=6379
-      - REDIS_USERNAME=red-cjvvvvvvvvvvvvvvvvvvvvvvvv
-      - CLOUDINARY_CLOUD_NAME=iskele360
-      - CLOUDINARY_API_KEY=your_api_key
-      - CLOUDINARY_API_SECRET=your_api_secret
-    volumes:
-      - .:/usr/src/app
-      - /usr/src/app/node_modules
-    command: npm run dev
-    container_name: iskele360-backend-v8
-    restart: unless-stopped
+      - DB_PASS=K9iWuJiLfXTDyT7tAfdSLWsRWCyXmaUwb
+      - UPSTASH_REDIS_REST_URL=https://magnetic-malamute-11416.upstash.io
+      - UPSTASH_REDIS_REST_TOKEN=ASyYAAljcDExZTdjN2M1MTA4YjA0MDJhYWM1Mzg2MGVjZjc3ZTQxNHAxMzg2MGVjZjc3ZTQxNA
+      - JWT_SECRET=iskele360v81257-src-v8-baran
+      - JWT_EXPIRES_IN=1d
+      - CLOUDINARY_CLOUD_NAME=dj0gdefhc
+      - CLOUDINARY_API_KEY=814979256919438
+      - CLOUDINARY_API_SECRET=HjXB-SE4pUmaGQH8vKlKf2XxH6U
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:8080/api/health"]
+      test: ["CMD", "wget", "--spider", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-    volumes:
-      - ./logs:/usr/src/app/logs
-    networks:
-      - iskele360-network
+
+volumes:
+  postgres_data:
+  redis_data:
 
 networks:
-  iskele360-network:
+  iskele360_network:
     driver: bridge 

@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('../config/database');
+const sequelize = require('../config/database');
 const bcrypt = require('bcryptjs');
 
 const User = sequelize.define('User', {
@@ -29,8 +29,8 @@ const User = sequelize.define('User', {
     allowNull: false
   },
   role: {
-    type: DataTypes.ENUM('admin', 'puantajci'),
-    defaultValue: 'puantajci'
+    type: DataTypes.ENUM('admin', 'user'),
+    defaultValue: 'user'
   },
   phone: {
     type: DataTypes.STRING,
@@ -48,7 +48,13 @@ const User = sequelize.define('User', {
   timestamps: true,
   paranoid: true, // Soft delete
   hooks: {
-    beforeSave: async (user) => {
+    beforeCreate: async (user) => {
+      if (user.password) {
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(user.password, salt);
+      }
+    },
+    beforeUpdate: async (user) => {
       if (user.changed('password')) {
         const salt = await bcrypt.genSalt(10);
         user.password = await bcrypt.hash(user.password, salt);
@@ -58,8 +64,8 @@ const User = sequelize.define('User', {
 });
 
 // Instance method to check password
-User.prototype.comparePassword = async function(candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.password);
+User.prototype.validatePassword = async function(password) {
+  return await bcrypt.compare(password, this.password);
 };
 
 // Create indexes

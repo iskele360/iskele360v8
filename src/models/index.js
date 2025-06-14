@@ -8,8 +8,8 @@ User.hasOne(Worker);
 Worker.belongsTo(User);
 
 // Company - Worker İlişkisi (1:N)
-Company.hasMany(Worker);
-Worker.belongsTo(Company);
+Company.hasMany(Worker, { foreignKey: 'companyId' });
+Worker.belongsTo(Company, { foreignKey: 'companyId' });
 
 // Model senkronizasyonu
 const syncModels = async () => {

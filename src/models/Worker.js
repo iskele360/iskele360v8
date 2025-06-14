@@ -8,19 +8,43 @@ const Worker = sequelize.define('Worker', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true
   },
+  firstName: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  lastName: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  nationalId: {
+    type: DataTypes.STRING,
+    unique: true
+  },
+  phone: {
+    type: DataTypes.STRING
+  },
+  address: {
+    type: DataTypes.TEXT
+  },
+  photoUrl: {
+    type: DataTypes.STRING
+  },
+  isActive: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
+  },
+  companyId: {
+    type: DataTypes.UUID,
+    references: {
+      model: 'Companies',
+      key: 'id'
+    }
+  },
   userId: {
     type: DataTypes.UUID,
     allowNull: false,
     references: {
       model: 'Users',
-      key: 'id'
-    }
-  },
-  companyId: {
-    type: DataTypes.UUID,
-    allowNull: false,
-    references: {
-      model: 'Companies',
       key: 'id'
     }
   },
@@ -57,10 +81,6 @@ const Worker = sequelize.define('Worker', {
     type: DataTypes.ENUM('daily', 'monthly'),
     defaultValue: 'daily'
   },
-  isActive: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: true
-  },
   bloodType: {
     type: DataTypes.STRING,
     allowNull: true
@@ -73,16 +93,8 @@ const Worker = sequelize.define('Worker', {
     type: DataTypes.STRING,
     allowNull: true
   },
-  address: {
-    type: DataTypes.TEXT,
-    allowNull: true
-  },
   notes: {
     type: DataTypes.TEXT,
-    allowNull: true
-  },
-  photoUrl: {
-    type: DataTypes.STRING,
     allowNull: true
   },
   photoPublicId: {

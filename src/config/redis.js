@@ -1,22 +1,16 @@
-const Redis = require('ioredis');
-const logger = require('../utils/logger');
+const { Redis } = require('@upstash/redis');
+const config = require('./index');
 
-const redisConfig = {
-  host: process.env.REDIS_HOST || 'red-cjvvvvvvvvvvvvvvvvvvvvvvvv.redis.render.com',
-  port: process.env.REDIS_PORT || 6379,
-  username: process.env.REDIS_USERNAME || 'red-cjvvvvvvvvvvvvvvvvvvvvvvvv',
-  password: process.env.REDIS_PASSWORD,
-  tls: process.env.NODE_ENV === 'production' ? {} : undefined
-};
-
-const redis = new Redis(redisConfig);
-
-redis.on('connect', () => {
-  logger.info('Redis bağlantısı başarılı');
+const redis = new Redis({
+  url: config.redis.url,
+  token: config.redis.token
 });
 
-redis.on('error', (error) => {
-  logger.error('Redis bağlantı hatası:', error);
+// Test the connection
+redis.ping().then(() => {
+  console.log('Redis Client Connected');
+}).catch((err) => {
+  console.error('Redis Client Error:', err);
 });
 
 module.exports = redis; 

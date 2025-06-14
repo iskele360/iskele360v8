@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('../config/database');
+const sequelize = require('../config/database');
 
 const Company = sequelize.define('Company', {
   id: {
@@ -11,49 +11,25 @@ const Company = sequelize.define('Company', {
     type: DataTypes.STRING,
     allowNull: false
   },
-  taxNumber: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    unique: true
-  },
-  taxOffice: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
   address: {
-    type: DataTypes.TEXT,
-    allowNull: true
+    type: DataTypes.TEXT
   },
   phone: {
-    type: DataTypes.STRING,
-    allowNull: true
+    type: DataTypes.STRING
   },
   email: {
     type: DataTypes.STRING,
-    allowNull: true,
     validate: {
       isEmail: true
     }
   },
-  authorizedPerson: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  authorizedPhone: {
-    type: DataTypes.STRING,
-    allowNull: true
+  taxNumber: {
+    type: DataTypes.STRING
   },
   isActive: {
     type: DataTypes.BOOLEAN,
     defaultValue: true
-  },
-  notes: {
-    type: DataTypes.TEXT,
-    allowNull: true
   }
-}, {
-  timestamps: true,
-  paranoid: true // Soft delete
 });
 
 // Create indexes

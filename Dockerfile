@@ -1,12 +1,14 @@
 # Base image
-FROM node:20-slim
+FROM node:18-alpine
 
 # Set working directory
 WORKDIR /usr/src/app
 
-# Install dependencies
+# Copy package files
 COPY package*.json ./
-RUN npm install
+
+# Install dependencies
+RUN npm install --production
 
 # Copy source code
 COPY . .
@@ -18,5 +20,5 @@ ENV PORT=3000
 # Expose port
 EXPOSE 3000
 
-# Start application
+# Start the application
 CMD ["npm", "start"] 
