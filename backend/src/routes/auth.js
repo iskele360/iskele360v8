@@ -7,8 +7,8 @@ const verifyToken = require('../middleware/verifyToken');
 router.post('/register', register);
 router.post('/login', login);
 
-// Protected routes
-router.use(verifyToken);
+// Protected routes - requires authentication
+router.use('/me', verifyToken);  // Apply middleware only to /me route
 router.get('/me', me);
 
 module.exports = router; 
