@@ -4,8 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-const path = require('path');
-const sequelize = require(path.join(__dirname, 'config', 'database'));
+const connectDB = require('./config/database');
 const { Redis } = require('@upstash/redis');
 const cloudinary = require('cloudinary').v2;
 const authRoutes = require('./routes/auth');
@@ -55,19 +54,14 @@ app.get('/health', (_, res) => res.status(200).send('OK'));
 // Initialize services
 const initializeServices = async () => {
   try {
-    // Test PostgreSQL connection
-    await sequelize.authenticate();
-    console.log('✅ PostgreSQL connection successful');
+    // Connect to MongoDB
+    await connectDB();
     
     // Test Redis connection
     await redis.ping();
     console.log('✅ Redis connection successful');
     
     console.log('✅ Cloudinary configured');
-    
-    // Sync database models
-    await sequelize.sync();
-    console.log('✅ Database sync completed');
 
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {

@@ -1,83 +1,67 @@
-const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database');
+const mongoose = require('mongoose');
 
-const Puantaj = sequelize.define('Puantaj', {
-  id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
-    primaryKey: true
-  },
+const puantajSchema = new mongoose.Schema({
   userId: {
-    type: DataTypes.UUID,
-    allowNull: false,
-    references: {
-      model: 'Users',
-      key: 'id'
-    }
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   },
   date: {
-    type: DataTypes.DATEONLY,
-    allowNull: false
+    type: Date,
+    required: true
   },
   startTime: {
-    type: DataTypes.TIME,
-    allowNull: false
+    type: String,
+    required: true
   },
   endTime: {
-    type: DataTypes.TIME,
-    allowNull: false
+    type: String,
+    required: true
   },
   breakTime: {
-    type: DataTypes.INTEGER, // Minutes
-    defaultValue: 60
+    type: Number,
+    default: 60 // Minutes
   },
   overtime: {
-    type: DataTypes.INTEGER, // Minutes
-    defaultValue: 0
+    type: Number,
+    default: 0 // Minutes
   },
   location: {
-    type: DataTypes.STRING,
-    allowNull: false
+    type: String,
+    required: true
   },
   notes: {
-    type: DataTypes.TEXT
+    type: String
   },
   status: {
-    type: DataTypes.ENUM('pending', 'approved', 'rejected'),
-    defaultValue: 'pending'
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending'
   },
   approvedBy: {
-    type: DataTypes.UUID,
-    references: {
-      model: 'Users',
-      key: 'id'
-    }
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   },
   approvedAt: {
-    type: DataTypes.DATE
+    type: Date
   }
 }, {
-  timestamps: true,
-  indexes: [
-    {
-      fields: ['userId', 'date'],
-      unique: true
-    },
-    {
-      fields: ['date']
-    },
-    {
-      fields: ['status']
-    }
-  ]
+  timestamps: true
 });
 
-// Instance method to calculate total hours
-Puantaj.prototype.calculateTotalHours = function() {
+// Bileşik indeks oluşturma
+puantajSchema.index({ userId: 1, date: 1 }, { unique: true });
+puantajSchema.index({ date: 1 });
+puantajSchema.index({ status: 1 });
+
+// Toplam çalışma saatini hesaplama metodu
+puantajSchema.methods.calculateTotalHours = function() {
   const start = new Date(`2000-01-01T${this.startTime}`);
   const end = new Date(`2000-01-01T${this.endTime}`);
   const totalMinutes = (end - start) / 1000 / 60 - this.breakTime + this.overtime;
-  return Math.round(totalMinutes / 60 * 100) / 100; // Round to 2 decimal places
+  return Math.round(totalMinutes / 60 * 100) / 100; // 2 ondalık basamağa yuvarlama
 };
+
+const Puantaj = mongoose.model('Puantaj', puantajSchema);
 
 module.exports = Puantaj; 
