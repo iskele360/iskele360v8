@@ -33,9 +33,7 @@ class _SplashScreenState extends State<SplashScreen> {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     
     // Otomatik giriş kontrol et
-    final success = await authProvider.autoLogin();
-    
-    if (success) {
+    if (authProvider.isAuthenticated) {
       // Role göre uygun ekrana yönlendir
       _navigateBasedOnRole(authProvider.userRole);
     } else {
@@ -45,7 +43,7 @@ class _SplashScreenState extends State<SplashScreen> {
   }
   
   void _navigateBasedOnRole(String? role) {
-    if (role == AppConstants.roleSupervisor) {
+    if (role == AppConstants.rolePuantajci) {
       // Puantajcı ana ekranına yönlendir
       Navigator.pushReplacementNamed(context, '/home');
     } else if (role == AppConstants.roleWorker) {

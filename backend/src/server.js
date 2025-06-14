@@ -3,14 +3,43 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
-const connectDB = require('./config/database');
 const { Redis } = require('@upstash/redis');
+const rateLimit = require('express-rate-limit');
 const cloudinary = require('cloudinary').v2;
+const connectDB = require('./config/database');
 const authRoutes = require('./routes/auth');
+const mongoose = require('mongoose');
 
 // Initialize Express
 const app = express();
+
+// Initialize Redis
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// Connect to MongoDB
+connectDB().then(() => {
+  console.log('✅ MongoDB bağlantısı başarılı');
+}).catch(err => {
+  console.error('❌ MongoDB bağlantı hatası:', err);
+  process.exit(1);
+});
+
+// Test Redis connection
+redis.ping().then(() => {
+  console.log('✅ Redis bağlantısı başarılı');
+}).catch(err => {
+  console.error('❌ Redis bağlantı hatası:', err);
+});
 
 // Middleware
 app.use(cors({
@@ -20,27 +49,16 @@ app.use(helmet());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-});
-
-// Configure Redis
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN
-});
-
-// Rate limiting
+// Rate limiting with Redis
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 900000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use(limiter);
 
-// Logging middleware
+// Development logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
@@ -49,29 +67,27 @@ if (process.env.NODE_ENV === 'development') {
 app.use('/api/auth', authRoutes);
 
 // Health check endpoint
-app.get('/health', (_, res) => res.status(200).send('OK'));
-
-// Initialize services
-const initializeServices = async () => {
+app.get('/health', async (req, res) => {
   try {
-    // Connect to MongoDB
-    await connectDB();
-    
-    // Test Redis connection
-    await redis.ping();
-    console.log('✅ Redis connection successful');
-    
-    console.log('✅ Cloudinary configured');
-
-    const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => {
-      console.log(`🚀 Server is running on port ${PORT}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
+    const redisStatus = await redis.ping();
+    res.status(200).json({
+      status: 'OK',
+      database: 'MongoDB',
+      cache: 'Redis',
+      environment: process.env.NODE_ENV,
+      redis: redisStatus === 'PONG' ? 'Connected' : 'Error',
+      mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
     });
   } catch (error) {
-    console.error('❌ Service initialization error:', error);
-    process.exit(1);
+    res.status(500).json({
+      status: 'Error',
+      error: error.message
+    });
   }
-};
+});
 
-initializeServices(); 
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server başlatıldı: Port ${PORT}`);
+  console.log(`🌍 Ortam: ${process.env.NODE_ENV}`);
+}); 

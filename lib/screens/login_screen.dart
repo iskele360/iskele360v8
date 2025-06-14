@@ -13,19 +13,18 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
-  final _codeController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _codeController = TextEditingController();
 
   bool _isLoading = false;
-  bool _isPasswordVisible = false;
-  bool _isCodeLogin = false; // İşçi ve malzemeci için kod ile giriş
-  String _selectedRole = 'supervisor'; // Varsayılan rol
+  String _selectedRole = AppConstants.rolePuantajci;
+  bool _isCodeLogin = false;
 
   @override
   void dispose() {
     _emailController.dispose();
-    _codeController.dispose();
     _passwordController.dispose();
+    _codeController.dispose();
     super.dispose();
   }
 
@@ -43,24 +42,32 @@ class _LoginScreenState extends State<LoginScreen> {
       bool success;
 
       if (_isCodeLogin) {
-        // Kod ile giriş (işçi veya malzemeci)
-        success = await authProvider.loginWithCode(
-            _codeController.text.trim(), _passwordController.text);
+        if (_selectedRole == AppConstants.roleSupplier) {
+          success = await authProvider.loginWithSupplierCode(
+            code: _codeController.text.trim(),
+          );
+        } else if (_selectedRole == AppConstants.roleWorker) {
+          success = await authProvider.loginWithWorkerCode(
+            code: _codeController.text.trim(),
+          );
+        } else {
+          throw Exception('Geçersiz rol seçimi');
+        }
       } else {
-        // Email ile giriş (puantajcı)
-        success = await authProvider.loginWithEmail(
-            _emailController.text.trim(), _passwordController.text);
+        success = await authProvider.login(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim(),
+        );
       }
 
       if (mounted) {
         if (success) {
           Navigator.pushReplacementNamed(context, '/home');
-        } else if (!AppConstants.useMockApi) {
-          // Sadece gerçek API kullanırken hata mesajını göster
+        } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                authProvider.errorMessage ?? 'Giriş başarısız',
+                authProvider.error ?? 'Giriş başarısız',
               ),
               backgroundColor: Colors.red,
             ),
@@ -68,8 +75,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     } catch (e) {
-      if (mounted && !AppConstants.useMockApi) {
-        // Sadece gerçek API kullanırken hata mesajını göster
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Hata: $e'),
@@ -114,7 +120,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 16),
               // Uygulama adı
               const Text(
-                'İSKELE 360',
+                AppConstants.appName,
                 style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
@@ -143,73 +149,130 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Giriş seçenekleri (Sekmeler)
-                        _buildLoginTabs(),
-                        const SizedBox(height: 24),
-
-                        // Giriş formu
-                        _buildLoginForm(),
-                        const SizedBox(height: 32),
-
-                        // Giriş butonu
-                        ElevatedButton(
-                          onPressed: _isLoading ? null : _login,
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            backgroundColor: Colors.blue,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor:
-                                Colors.blue.withOpacity(0.5),
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2.0,
-                                  ),
-                                )
-                              : const Text(
-                                  'Giriş Yap',
-                                  style: TextStyle(fontSize: 16),
-                                ),
-                        ),
-                        const SizedBox(height: 24),
-
-                        // Puantajcı kaydı butonu (sadece puantajcı sekmesindeyken görünecek)
-                        if (_selectedRole == 'supervisor')
-                          TextButton.icon(
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/register');
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Giriş tipi seçimi
+                          SegmentedButton<bool>(
+                            segments: const [
+                              ButtonSegment<bool>(
+                                value: false,
+                                label: Text('E-posta'),
+                                icon: Icon(Icons.email),
+                              ),
+                              ButtonSegment<bool>(
+                                value: true,
+                                label: Text('Kod'),
+                                icon: Icon(Icons.key),
+                              ),
+                            ],
+                            selected: {_isCodeLogin},
+                            onSelectionChanged: (Set<bool> newSelection) {
+                              setState(() {
+                                _isCodeLogin = newSelection.first;
+                              });
                             },
-                            icon: const Icon(Icons.person_add),
-                            label: const Text('Puantajcı Kaydı Oluştur'),
+                          ),
+                          const SizedBox(height: 24),
+
+                          if (_isCodeLogin) ...[
+                            // Rol seçimi
+                            SegmentedButton<String>(
+                              segments: const [
+                                ButtonSegment<String>(
+                                  value: AppConstants.roleSupplier,
+                                  label: Text('Tedarikçi'),
+                                  icon: Icon(Icons.business),
+                                ),
+                                ButtonSegment<String>(
+                                  value: AppConstants.roleWorker,
+                                  label: Text('İşçi'),
+                                  icon: Icon(Icons.person),
+                                ),
+                              ],
+                              selected: {_selectedRole},
+                              onSelectionChanged: (Set<String> newSelection) {
+                                setState(() {
+                                  _selectedRole = newSelection.first;
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 24),
+
+                            // Kod
+                            TextFormField(
+                              controller: _codeController,
+                              decoration: const InputDecoration(
+                                labelText: 'Kod',
+                                prefixIcon: Icon(Icons.key),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Lütfen kodunuzu girin';
+                                }
+                                return null;
+                              },
+                            ),
+                          ] else ...[
+                            // E-posta
+                            TextFormField(
+                              controller: _emailController,
+                              decoration: const InputDecoration(
+                                labelText: 'E-posta',
+                                prefixIcon: Icon(Icons.email),
+                              ),
+                              keyboardType: TextInputType.emailAddress,
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Lütfen e-posta adresinizi girin';
+                                }
+                                if (!value.contains('@')) {
+                                  return 'Geçerli bir e-posta adresi girin';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Şifre
+                            TextFormField(
+                              controller: _passwordController,
+                              decoration: const InputDecoration(
+                                labelText: 'Şifre',
+                                prefixIcon: Icon(Icons.lock),
+                              ),
+                              obscureText: true,
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Lütfen şifrenizi girin';
+                                }
+                                return null;
+                              },
+                            ),
+                          ],
+
+                          const SizedBox(height: 24),
+
+                          // Giriş butonu
+                          ElevatedButton(
+                            onPressed: _isLoading ? null : _login,
+                            child: _isLoading
+                                ? const CircularProgressIndicator()
+                                : const Text('Giriş Yap'),
                           ),
 
-                        // Ana ekrana dön
-                        TextButton.icon(
-                          onPressed: () {
-                            Navigator.pushReplacementNamed(context, '/');
-                          },
-                          icon: const Icon(Icons.arrow_back),
-                          label: const Text('Ana Ekrana Dön'),
-                        ),
-
-                        // Sürüm bilgisi
-                        const SizedBox(height: 16),
-                        const Text(
-                          'v1.0.0 - İSKELE360 Tüm Hakları Saklıdır',
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontSize: 12,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
+                          if (!_isCodeLogin) ...[
+                            const SizedBox(height: 16),
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pushNamed(context, '/register'),
+                              child: const Text('Hesabınız yok mu? Kayıt olun'),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -217,185 +280,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildLoginTabs() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildRoleTab(
-            'Puantajcı',
-            Icons.admin_panel_settings,
-            'supervisor',
-            Colors.blue,
-          ),
-        ),
-        Expanded(
-          child: _buildRoleTab(
-            'İşçi',
-            Icons.person,
-            'isci',
-            Colors.green,
-          ),
-        ),
-        Expanded(
-          child: _buildRoleTab(
-            'Malzemeci',
-            Icons.inventory,
-            'supplier',
-            Colors.orange,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRoleTab(String title, IconData icon, String role, Color color) {
-    final isSelected = _selectedRole == role;
-
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _selectedRole = role;
-          _isCodeLogin = role == 'isci' || role == 'supplier';
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: isSelected ? color : Colors.grey.shade300,
-              width: 2,
-            ),
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              icon,
-              color: isSelected ? color : Colors.grey,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: TextStyle(
-                color: isSelected ? color : Colors.grey,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoginForm() {
-    return Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _isCodeLogin ? 'Kodu Girin' : 'E-posta Girin',
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Email veya kod girişi
-          if (_isCodeLogin)
-            TextFormField(
-              controller: _codeController,
-              decoration: InputDecoration(
-                hintText: '10 haneli kodu girin',
-                prefixIcon: const Icon(Icons.code),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                filled: true,
-                fillColor: Colors.grey.shade100,
-              ),
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Lütfen kodunuzu girin';
-                }
-                if (value.length != 10) {
-                  return 'Kod 10 haneli olmalıdır';
-                }
-                return null;
-              },
-            )
-          else
-            TextFormField(
-              controller: _emailController,
-              decoration: InputDecoration(
-                hintText: 'E-posta adresinizi girin',
-                prefixIcon: const Icon(Icons.email),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                filled: true,
-                fillColor: Colors.grey.shade100,
-              ),
-              keyboardType: TextInputType.emailAddress,
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Lütfen e-posta adresinizi girin';
-                }
-                if (!value.contains('@')) {
-                  return 'Geçerli bir e-posta adresi girin';
-                }
-                return null;
-              },
-            ),
-
-          const SizedBox(height: 16),
-          const Text(
-            'Şifre',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Şifre girişi
-          TextFormField(
-            controller: _passwordController,
-            obscureText: !_isPasswordVisible,
-            decoration: InputDecoration(
-              hintText: 'Şifrenizi girin',
-              prefixIcon: const Icon(Icons.lock),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _isPasswordVisible ? Icons.visibility_off : Icons.visibility,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _isPasswordVisible = !_isPasswordVisible;
-                  });
-                },
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              filled: true,
-              fillColor: Colors.grey.shade100,
-            ),
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Lütfen şifrenizi girin';
-              }
-              return null;
-            },
-          ),
-        ],
       ),
     );
   }

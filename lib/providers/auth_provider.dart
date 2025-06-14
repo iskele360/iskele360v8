@@ -3,24 +3,18 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:iskele360v7/models/user_model.dart';
-import 'package:iskele360v7/services/socket_service.dart';
-import 'package:iskele360v7/services/cache_service.dart';
-import 'package:shared_preferences.dart';
+import 'package:iskele360v7/utils/constants.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
-import '../constants/app_constants.dart';
 
 class AuthProvider with ChangeNotifier {
-  final SocketService _socketService = SocketService();
-  final CacheService _cacheService = CacheService();
-  final _storage = const FlutterSecureStorage();
   final ApiService _apiService;
   final SharedPreferences _prefs;
+  final _storage = const FlutterSecureStorage();
 
   User? _currentUser;
   bool _isLoading = false;
   String? _error;
-  String? _token;
-  Map<String, dynamic>? _user;
 
   AuthProvider(this._apiService, this._prefs) {
     _loadStoredData();
@@ -29,306 +23,159 @@ class AuthProvider with ChangeNotifier {
   User? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  String? get errorMessage => _error;
+  bool get isAuthenticated => _currentUser != null;
   String? get userRole => _currentUser?.role;
-  bool get isAuthenticated => _token != null;
-  String? get token => _token;
-  Map<String, dynamic>? get user => _user;
 
-  bool get isAdmin => _user?['role'] == AppConstants.roleAdmin;
-  bool get isPuantajci => _user?['role'] == AppConstants.rolePuantajci;
+  bool get isAdmin => _currentUser?.role == AppConstants.roleAdmin;
+  bool get isPuantajci => _currentUser?.role == AppConstants.rolePuantajci;
 
-  // Otomatik giriş
-  Future<bool> autoLogin() async {
-    return await checkAuth();
-  }
-
-  // Kullanıcı kaydı
-  Future<bool> register(
-      String email, String password, String name, String surname) async {
+  Future<void> _loadStoredData() async {
     try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
-
-      _socketService.emit('register', {
-        'email': email,
-        'password': password,
-        'name': name,
-        'surname': surname,
-      });
-
-      final response = await _waitForSocketResponse('registerResponse');
-
-      if (response['success'] == true) {
-        final user = User.fromJson(response['user']);
-        await _storage.write(key: 'auth_token', value: user.token);
-        await _cacheService.put('users', 'current_user', user.toJson());
-        _currentUser = user;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _error = response['message'] ?? 'Kayıt başarısız';
-        _isLoading = false;
-        notifyListeners();
-        return false;
+      final token = await _storage.read(key: AppConstants.tokenKey);
+      if (token != null) {
+        await _apiService.setToken(token);
+        await _loadUserData();
       }
     } catch (e) {
-      _error = 'Kayıt yapılamadı: $e';
-      _isLoading = false;
+      _error = 'Oturum bilgileri yüklenemedi: $e';
       notifyListeners();
-      return false;
     }
   }
 
-  // Profil güncelleme
-  Future<bool> updateProfile(String name, String surname, String email) async {
+  Future<void> _loadUserData() async {
     try {
-      _isLoading = true;
-      _error = null;
+      final user = await _apiService.getUserData();
+      _currentUser = user;
       notifyListeners();
-
-      _socketService.emit('updateProfile', {
-        'name': name,
-        'surname': surname,
-        'email': email,
-      });
-
-      final response = await _waitForSocketResponse('updateProfileResponse');
-
-      if (response['success'] == true) {
-        final user = User.fromJson(response['user']);
-        await _cacheService.put('users', 'current_user', user.toJson());
-        _currentUser = user;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _error = response['message'] ?? 'Profil güncellenemedi';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
     } catch (e) {
-      _error = 'Profil güncellenemedi: $e';
-      _isLoading = false;
+      _error = 'Kullanıcı bilgileri yüklenemedi: $e';
       notifyListeners();
-      return false;
     }
   }
 
-  // Şifre güncelleme
-  Future<bool> updatePassword(
-      String currentPassword, String newPassword) async {
+  Future<bool> login({
+    required String email,
+    required String password,
+  }) async {
     try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
+      _setLoading(true);
 
-      _socketService.emit('updatePassword', {
-        'currentPassword': currentPassword,
-        'newPassword': newPassword,
-      });
+      final user = await _apiService.login(
+        email: email,
+        password: password,
+      );
 
-      final response = await _waitForSocketResponse('updatePasswordResponse');
-
-      if (response['success'] == true) {
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _error = response['message'] ?? 'Şifre güncellenemedi';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-    } catch (e) {
-      _error = 'Şifre güncellenemedi: $e';
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  // Hesap silme
-  Future<bool> deleteAccount() async {
-    try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
-
-      _socketService.emit('deleteAccount', {});
-
-      final response = await _waitForSocketResponse('deleteAccountResponse');
-
-      if (response['success'] == true) {
-        await _storage.delete(key: 'auth_token');
-        await _cacheService.delete('users', 'current_user');
-        _currentUser = null;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _error = response['message'] ?? 'Hesap silinemedi';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-    } catch (e) {
-      _error = 'Hesap silinemedi: $e';
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  // Email ile giriş
-  Future<bool> loginWithEmail(String email, String password) async {
-    return login(email, password);
-  }
-
-  // Kullanıcı girişi
-  Future<bool> login(String email, String password) async {
-    try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
-
-      final response = await _apiService.login(email, password);
-      _token = response['token'];
-      await _saveUserData(response['user']);
-
-      _isLoading = false;
+      _currentUser = user;
+      _setLoading(false);
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Giriş yapılamadı: $e';
-      _isLoading = false;
-      notifyListeners();
+      _handleError('Giriş başarısız: $e');
       return false;
     }
   }
 
-  // Kod ile giriş
-  Future<bool> loginWithCode(String code, String password) async {
+  Future<bool> register({
+    required String name,
+    required String email,
+    required String password,
+    required String phone,
+    required String role,
+  }) async {
     try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
+      _setLoading(true);
 
-      _socketService
-          .emit('loginWithCode', {'code': code, 'password': password});
+      final user = await _apiService.register(
+        name: name,
+        email: email,
+        password: password,
+        phone: phone,
+        role: role,
+      );
 
-      final response = await _waitForSocketResponse('loginWithCodeResponse');
+      // Kayıt başarılı, şimdi login deneyelim
+      final loginSuccess = await login(
+        email: email,
+        password: password,
+      );
 
-      if (response['success'] == true) {
-        final user = User.fromJson(response['user']);
-        await _storage.write(key: 'auth_token', value: user.token);
-        await _cacheService.put('users', 'current_user', user.toJson());
-        _currentUser = user;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _error = response['message'] ?? 'Kod ile giriş başarısız';
-        _isLoading = false;
-        notifyListeners();
-        return false;
+      if (!loginSuccess) {
+        _handleError('Kayıt başarılı fakat otomatik giriş yapılamadı. Lütfen giriş yapın.');
+        return true; // Kayıt başarılı olduğu için true döndür
       }
-    } catch (e) {
-      _error = 'Kod ile giriş yapılamadı: $e';
-      _isLoading = false;
+
+      _currentUser = user;
+      _setLoading(false);
       notifyListeners();
+      return true;
+    } catch (e) {
+      _handleError('Kayıt işlemi sırasında bir hata oluştu. Lütfen tüm bilgileri doğru girdiğinizden emin olun ve tekrar deneyin.');
       return false;
     }
   }
 
-  // Çıkış yap
+  Future<bool> loginWithSupplierCode({
+    required String code,
+  }) async {
+    try {
+      _setLoading(true);
+
+      final user = await _apiService.loginWithSupplierCode(
+        code: code,
+      );
+
+      _currentUser = user;
+      _setLoading(false);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _handleError('Tedarikçi girişi başarısız: $e');
+      return false;
+    }
+  }
+
+  Future<bool> loginWithWorkerCode({
+    required String code,
+  }) async {
+    try {
+      _setLoading(true);
+
+      final user = await _apiService.loginWithWorkerCode(
+        code: code,
+      );
+
+      _currentUser = user;
+      _setLoading(false);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _handleError('İşçi girişi başarısız: $e');
+      return false;
+    }
+  }
+
   Future<void> logout() async {
     try {
+      _setLoading(true);
       await _apiService.logout();
-      _token = null;
-      _user = null;
-      await _storage.delete(key: 'auth_token');
-      await _cacheService.delete('users', 'current_user');
-      await _prefs.remove(AppConstants.userKey);
+      await _storage.delete(key: AppConstants.tokenKey);
       _currentUser = null;
-      _isLoading = false;
+      _setLoading(false);
       notifyListeners();
     } catch (e) {
-      _error = 'Çıkış yapılamadı: $e';
-      _isLoading = false;
-      notifyListeners();
+      _handleError('Çıkış yapılamadı: $e');
     }
   }
 
-  // Oturum kontrolü
-  Future<bool> checkAuth() async {
-    try {
-      final token = await _storage.read(key: 'auth_token');
-      if (token == null) return false;
-
-      _socketService.emit('verifyToken', {'token': token});
-
-      final response = await _waitForSocketResponse('verifyTokenResponse');
-
-      if (response['success'] == true) {
-        final userData = await _cacheService.get('users', 'current_user');
-        if (userData != null) {
-          _currentUser = User.fromJson(userData);
-          notifyListeners();
-          return true;
-        }
-      }
-
-      return false;
-    } catch (e) {
-      if (kDebugMode) {
-        print('Check auth error: $e');
-      }
-      return false;
-    }
-  }
-
-  // Socket yanıtını bekle
-  Future<Map<String, dynamic>> _waitForSocketResponse(String event) async {
-    try {
-      final completer = Completer<Map<String, dynamic>>();
-
-      final timer = Timer(const Duration(seconds: 10), () {
-        if (!completer.isCompleted) {
-          completer.completeError('İstek zaman aşımına uğradı');
-        }
-      });
-
-      void listener(dynamic data) {
-        if (!completer.isCompleted) {
-          timer.cancel();
-          _socketService.off(event);
-          completer.complete(data as Map<String, dynamic>);
-        }
-      }
-
-      _socketService.on(event, listener);
-
-      return await completer.future;
-    } catch (e) {
-      throw 'Socket yanıtı alınamadı: $e';
-    }
-  }
-
-  Future<void> _loadStoredData() async {
-    _token = await _apiService.getToken();
-    final userStr = _prefs.getString(AppConstants.userKey);
-    if (userStr != null) {
-      _user = Map<String, dynamic>.from(jsonDecode(userStr));
-    }
+  void _setLoading(bool value) {
+    _isLoading = value;
+    _error = null;
     notifyListeners();
   }
 
-  Future<void> _saveUserData(Map<String, dynamic> userData) async {
-    await _prefs.setString(AppConstants.userKey, jsonEncode(userData));
-    _user = userData;
+  void _handleError(String message) {
+    _error = message;
+    _isLoading = false;
+    notifyListeners();
   }
 }

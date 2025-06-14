@@ -4,19 +4,19 @@ class AppConstants {
 
   // API Base URL
   static const String _realApiBaseUrl =
-      'https://iskele360-v8-api.onrender.com/api';
+      'https://iskele360v8-2.onrender.com';
   static const String _mockApiBaseUrl =
-      'http://10.0.2.2:3000/api'; // Emülatör için localhost
+      'http://10.0.2.2:3000'; // Emülatör için localhost
   static const String _firebaseApiBaseUrl =
-      'http://127.0.0.1:5001/iskele360v7-7d5d6/us-central1/api';
+      'http://127.0.0.1:5001/iskele360v7-7d5d6/us-central1';
 
   // WebSocket URL
-  static const String _realSocketUrl = 'wss://iskele360-v8-api.onrender.com';
+  static const String _realSocketUrl = 'wss://iskele360v8-2.onrender.com';
   static const String _mockSocketUrl = 'ws://10.0.2.2:3000';
   static const String _firebaseSocketUrl = 'ws://127.0.0.1:5001';
 
   // Redis URL
-  static const String _realRedisUrl = 'redis://iskele360-v8-api.onrender.com';
+  static const String _realRedisUrl = 'redis://iskele360v8-2.onrender.com';
   static const String _mockRedisUrl = 'redis://10.0.2.2';
   static const int redisPort = 6379;
 
@@ -35,21 +35,21 @@ class AppConstants {
   static String get redisUrl => useMockApi ? _mockRedisUrl : _realRedisUrl;
 
   // API Endpoints
-  static const String loginEndpoint = '/auth/login';
-  static const String loginWithCodeEndpoint = '/auth/login-with-code';
-  static const String registerEndpoint = '/auth/register';
-  static const String profileEndpoint = '/users/profile';
+  static const String loginEndpoint = '/api/auth/login';
+  static const String loginWithCodeEndpoint = '/api/auth/login-with-code';
+  static const String registerEndpoint = '/api/auth/register';
+  static const String profileEndpoint = '/api/users/profile';
 
   // Kullanıcı Rolleri
-  static const String roleSupervisor = 'puantajci'; // Puantajcı
-  static const String roleWorker = 'isci'; // İşçi
-  static const String roleSupplier = 'tedarikci'; // Tedarikçi
   static const String roleAdmin = 'admin'; // Admin
+  static const String rolePuantajci = 'supervisor'; // Puantajcı
+  static const String roleWorker = 'worker'; // İşçi
+  static const String roleSupplier = 'supplier'; // Tedarikçi
 
   // Puantaj Durumları
-  static const String puantajStatusTamamlandi = 'onaylandi';
-  static const String puantajStatusDevamEdiyor = 'onay_bekliyor';
-  static const String puantajStatusIptal = 'reddedildi';
+  static const String puantajStatusTamamlandi = 'completed';
+  static const String puantajStatusDevamEdiyor = 'pending';
+  static const String puantajStatusIptal = 'cancelled';
 
   // Socket Events
   static const String eventNewPuantaj = 'new_puantaj';
@@ -81,4 +81,5 @@ class AppConstants {
 
   // Secure Storage Keys
   static const String tokenKey = 'auth_token';
+  static const String userKey = 'user_data';
 }

@@ -3,7 +3,7 @@ import 'package:iskele360v7/models/user_model.dart';
 import 'package:iskele360v7/services/api_service.dart';
 
 class UserProvider with ChangeNotifier {
-  final ApiService _apiService;
+  final ApiService _apiService = ApiService();
   
   List<User> _workers = [];
   List<User> _suppliers = [];
@@ -15,8 +15,6 @@ class UserProvider with ChangeNotifier {
   List<User> get suppliers => _suppliers;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  
-  UserProvider(this._apiService);
   
   // Puantajcı: Yeni işçi oluştur
   Future<bool> createWorker({

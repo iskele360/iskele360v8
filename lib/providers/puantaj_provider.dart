@@ -37,7 +37,7 @@ class PuantajProvider with ChangeNotifier {
   Future<void> fetchPuantajlar() async {
     try {
       _setLoading(true);
-      _puantajlar = await _apiService.getPuantajciPuantajlari();
+      _puantajlar = await _apiService.getPuantajList();
       _setError(null);
     } catch (e) {
       _setError(e.toString());
@@ -49,7 +49,8 @@ class PuantajProvider with ChangeNotifier {
   Future<void> fetchIsciPuantajlari(String workerId) async {
     try {
       _setLoading(true);
-      _puantajlar = await _apiService.getIsciPuantajlari(workerId);
+      _puantajlar = await _apiService.getPuantajList();
+      _puantajlar = _puantajlar.where((p) => p.isciId == workerId).toList();
       _setError(null);
     } catch (e) {
       _setError(e.toString());

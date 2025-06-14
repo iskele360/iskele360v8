@@ -4,7 +4,7 @@ import 'package:iskele360v7/models/user_model.dart';
 import 'package:iskele360v7/services/api_service.dart';
 
 class MalzemeProvider with ChangeNotifier {
-  final ApiService _apiService;
+  final ApiService _apiService = ApiService();
   
   List<Malzeme> _malzemeList = [];
   List<Zimmet> _zimmetList = [];
@@ -20,8 +20,6 @@ class MalzemeProvider with ChangeNotifier {
   
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  
-  MalzemeProvider(this._apiService);
   
   // Malzemeci: Yeni malzeme ekle
   Future<bool> createMalzeme({
@@ -207,7 +205,7 @@ class MalzemeProvider with ChangeNotifier {
     }
   }
   
-  // İşçi listesini getir (malzeme zimmetlemek için)
+  // İşçi listesini getir
   Future<void> getIsciList() async {
     _isLoading = true;
     _errorMessage = null;
