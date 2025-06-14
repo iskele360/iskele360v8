@@ -1,14 +1,13 @@
 /**
  * Redis önbellek servisi
- * In-memory cache'e alternatif olarak Redis kullanımı
- * Redis bağlantısı yoksa in-memory cache'e fallback yapar
+ * Upstash Redis kullanımı
  */
 
-const redis = require('redis');
+const { Redis } = require('@upstash/redis');
 const cacheService = require('./cacheService');
 
 // Redis istemci yapılandırması
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const REDIS_URL = process.env.REDIS_URL || '';
 const REDIS_ENABLED = process.env.REDIS_ENABLED === 'true';
 
 // Debug için environment variables
@@ -39,53 +38,28 @@ const initRedis = async () => {
   try {
     console.log('Redis bağlantısı başlatılıyor...');
     
-    // En basit haliyle Redis client
-    redisClient = redis.createClient({
-      url: REDIS_URL
-    });
-
-    // Bağlantı olaylarını dinle
-    redisClient.on('connect', () => {
-      console.log('Redis bağlantısı başlatılıyor...');
-    });
-
-    redisClient.on('ready', () => {
-      console.log('Redis bağlantısı hazır');
-      redisConnected = true;
-    });
-
-    redisClient.on('error', (err) => {
-      console.error('Redis bağlantı hatası:', {
-        message: err.message,
-        code: err.code,
-        syscall: err.syscall,
-        hostname: err.hostname,
-        fatal: err.fatal,
-        stack: err.stack // Stack trace eklendi
-      });
-      redisConnected = false;
-    });
-
-    redisClient.on('end', () => {
-      console.log('Redis bağlantısı sonlandı');
-      redisConnected = false;
-    });
-
-    // Bağlantıyı aç
-    await redisClient.connect();
-    console.log('Redis bağlantısı açıldı, ping testi yapılıyor...');
+    // URL'den token ve endpoint çıkar
+    const url = new URL(REDIS_URL);
+    const token = url.password;
+    const endpoint = `https://${url.hostname}`;
     
-    // Ping testi
+    // Upstash Redis client oluştur
+    redisClient = new Redis({
+      url: endpoint,
+      token: token
+    });
+
+    // Bağlantıyı test et
+    console.log('Redis ping testi yapılıyor...');
     const pingResult = await redisClient.ping();
     console.log('Redis ping başarılı:', pingResult);
+    redisConnected = true;
     
   } catch (err) {
     console.error('Redis bağlantısı kurulamadı:', {
       name: err.name,
       message: err.message,
       code: err.code,
-      syscall: err.syscall,
-      hostname: err.hostname,
       stack: err.stack
     });
     console.log('In-memory cache fallback kullanılıyor');
@@ -99,17 +73,15 @@ const initRedis = async () => {
  * @returns {Promise<any|null>} - Önbellekteki veri veya null
  */
 const get = async (key) => {
-  // Redis bağlı değilse in-memory cache'e yönlendir
   if (!redisConnected || !redisClient) {
     return cacheService.get(key);
   }
 
   try {
     const data = await redisClient.get(key);
-    return data ? JSON.parse(data) : null;
+    return data || null;
   } catch (err) {
     console.error('Redis get hatası:', err.message);
-    // Hata durumunda in-memory cache'e fallback yap
     return cacheService.get(key);
   }
 };
@@ -121,21 +93,17 @@ const get = async (key) => {
  * @param {number} ttl - Önbellek süresi (saniye)
  * @returns {Promise<boolean>} - İşlem başarılı mı
  */
-const set = async (key, value, ttl = 300) => { // 5 dakika varsayılan
-  // Redis bağlı değilse in-memory cache'e yönlendir
+const set = async (key, value, ttl = 300) => {
   if (!redisConnected || !redisClient) {
-    cacheService.set(key, value, ttl * 1000); // saniye -> milisaniye
+    cacheService.set(key, value, ttl * 1000);
     return true;
   }
 
   try {
-    const stringValue = JSON.stringify(value);
-    await redisClient.set(key, stringValue);
-    await redisClient.expire(key, ttl);
+    await redisClient.set(key, value, { ex: ttl });
     return true;
   } catch (err) {
     console.error('Redis set hatası:', err.message);
-    // Hata durumunda in-memory cache'e fallback yap
     cacheService.set(key, value, ttl * 1000);
     return false;
   }
@@ -147,7 +115,6 @@ const set = async (key, value, ttl = 300) => { // 5 dakika varsayılan
  * @returns {Promise<boolean>} - İşlem başarılı mı
  */
 const del = async (key) => {
-  // Redis bağlı değilse in-memory cache'e yönlendir
   if (!redisConnected || !redisClient) {
     cacheService.delete(key);
     return true;
@@ -158,7 +125,6 @@ const del = async (key) => {
     return true;
   } catch (err) {
     console.error('Redis delete hatası:', err.message);
-    // Hata durumunda in-memory cache'e fallback yap
     cacheService.delete(key);
     return false;
   }
@@ -170,37 +136,19 @@ const del = async (key) => {
  * @returns {Promise<boolean>} - İşlem başarılı mı
  */
 const deleteByPrefix = async (prefix) => {
-  // Redis bağlı değilse in-memory cache'e yönlendir
   if (!redisConnected || !redisClient) {
     cacheService.deleteByPrefix(prefix);
     return true;
   }
 
   try {
-    // SCAN kullanarak prefixle eşleşen anahtarları bul
-    let cursor = 0;
-    const pattern = `${prefix}*`;
-    let keys = [];
-
-    do {
-      const scan = await redisClient.scan(cursor, {
-        MATCH: pattern,
-        COUNT: 100
-      });
-      
-      cursor = scan.cursor;
-      keys = [...keys, ...scan.keys];
-    } while (cursor !== 0);
-
-    // Bulunan tüm anahtarları sil
+    const keys = await redisClient.keys(`${prefix}*`);
     if (keys.length > 0) {
       await redisClient.del(keys);
     }
-
     return true;
   } catch (err) {
     console.error('Redis deleteByPrefix hatası:', err.message);
-    // Hata durumunda in-memory cache'e fallback yap
     cacheService.deleteByPrefix(prefix);
     return false;
   }
@@ -211,18 +159,16 @@ const deleteByPrefix = async (prefix) => {
  * @returns {Promise<boolean>} - İşlem başarılı mı
  */
 const clear = async () => {
-  // Redis bağlı değilse in-memory cache'e yönlendir
   if (!redisConnected || !redisClient) {
     cacheService.clear();
     return true;
   }
 
   try {
-    await redisClient.flushDb();
+    await redisClient.flushall();
     return true;
   } catch (err) {
     console.error('Redis clear hatası:', err.message);
-    // Hata durumunda in-memory cache'e fallback yap
     cacheService.clear();
     return false;
   }
@@ -267,6 +213,7 @@ initRedis().catch(err => {
 });
 
 module.exports = {
+  initRedis,
   get,
   set,
   del,
