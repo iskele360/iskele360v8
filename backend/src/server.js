@@ -48,45 +48,9 @@ if (process.env.NODE_ENV === 'development') {
 
 // Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/users', require('./routes/userRoutes'));
-app.use('/api/puantaj', require('./routes/puantaj'));
 
 // Health check endpoint
-app.get('/health', async (req, res) => {
-  try {
-    // Test database connection
-    await sequelize.authenticate();
-    
-    // Test Redis connection
-    await redis.ping();
-    
-    res.status(200).json({
-      status: 'healthy',
-      services: {
-        database: 'connected',
-        redis: 'connected',
-        cloudinary: 'configured'
-      },
-      environment: process.env.NODE_ENV,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: 'unhealthy',
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    success: false,
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
-  });
-});
+app.get('/health', (_, res) => res.status(200).send('OK'));
 
 // Initialize services
 const initializeServices = async () => {
