@@ -16,6 +16,9 @@ services:
       - REDIS_HOST=red-cjvvvvvvvvvvvvvvvvvvvvvvvv.redis.render.com
       - REDIS_PORT=6379
       - REDIS_USERNAME=red-cjvvvvvvvvvvvvvvvvvvvvvvvv
+      - CLOUDINARY_CLOUD_NAME=iskele360
+      - CLOUDINARY_API_KEY=your_api_key
+      - CLOUDINARY_API_SECRET=your_api_secret
     volumes:
       - .:/usr/src/app
       - /usr/src/app/node_modules

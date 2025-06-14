@@ -10,6 +10,7 @@ const logger = require('./utils/logger');
 // Routes
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
+const workerRoutes = require('./routes/worker');
 
 const app = express();
 
@@ -22,6 +23,7 @@ app.use(limiter);
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/workers', workerRoutes);
 
 // Error handling
 app.use(errorHandler);

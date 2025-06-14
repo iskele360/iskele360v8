@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
+const cloudinaryService = require('../services/cloudinary.service');
 
 const Worker = sequelize.define('Worker', {
   id: {
@@ -83,10 +84,21 @@ const Worker = sequelize.define('Worker', {
   photoUrl: {
     type: DataTypes.STRING,
     allowNull: true
+  },
+  photoPublicId: {
+    type: DataTypes.STRING,
+    allowNull: true
   }
 }, {
   timestamps: true,
-  paranoid: true // Soft delete
+  paranoid: true, // Soft delete
+  hooks: {
+    beforeDestroy: async (worker) => {
+      if (worker.photoPublicId) {
+        await cloudinaryService.deleteImage(worker.photoPublicId);
+      }
+    }
+  }
 });
 
 // Create indexes
