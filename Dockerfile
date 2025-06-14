@@ -1,15 +1,22 @@
-FROM node:18
+# Base image
+FROM node:18-alpine
 
+# Set working directory
 WORKDIR /app
 
+# Install dependencies
 COPY package*.json ./
-COPY backend/package*.json ./backend/
+RUN npm install --production
 
-RUN npm install
-RUN cd backend && npm install
-
+# Copy source code
 COPY . .
 
-EXPOSE 10000
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=3000
 
+# Expose port
+EXPOSE 3000
+
+# Start application
 CMD ["npm", "start"] 

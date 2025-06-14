@@ -1,11 +1,30 @@
 {
-  "name": "iskele360-backend",
+  "name": "iskele360-backend-v8",
   "version": "1.0.0",
+  "description": "İskele360 Backend API v8",
+  "main": "src/server.js",
   "scripts": {
-    "build": "npm install",
-    "start": "node backend/src/server.js"
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
   },
   "dependencies": {
-    "socket.io": "^4.8.1"
-  }
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "helmet": "^6.1.5",
+    "jsonwebtoken": "^9.0.0",
+    "pg": "^8.10.0",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.31.0",
+    "winston": "^3.8.2"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "Iskele360 Team",
+  "license": "ISC"
 }

@@ -1,16 +1,73 @@
-# iskele360v7
+# İskele360 V8 Backend
 
-A new Flutter project.
+İskele360 projesinin V8 versiyonu için backend API servisi.
 
-## Getting Started
+## Teknolojiler
 
-This project is a starting point for a Flutter application.
+- Node.js + Express
+- PostgreSQL (Sequelize ORM)
+- Redis (Upstash)
+- Cloudinary
+- Docker
+- Swagger
 
-A few resources to get you started if this is your first Flutter project:
+## Özellikler
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+- Kullanıcı yönetimi (kayıt, login)
+- Firma ve işçi yönetimi
+- Puantaj kayıtları
+- Avans kayıtları
+- Malzeme zimmet işlemleri
+- SGK karşılaştırma raporları
+- Rol tabanlı yetkilendirme
+- Redis önbellekleme
+- API dokümantasyonu
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Kurulum
+
+1. Repo'yu klonlayın:
+\`\`\`bash
+git clone https://github.com/iskele360/iskele360v8.git
+cd iskele360v8
+\`\`\`
+
+2. Bağımlılıkları yükleyin:
+\`\`\`bash
+npm install
+\`\`\`
+
+3. .env dosyasını oluşturun:
+\`\`\`bash
+cp .env.example .env
+\`\`\`
+
+4. .env dosyasını düzenleyin ve gerekli değişkenleri ayarlayın.
+
+5. Uygulamayı başlatın:
+\`\`\`bash
+# Development
+npm run dev
+
+# Production
+npm start
+\`\`\`
+
+## Docker ile Kurulum
+
+1. Docker image'ı build edin:
+\`\`\`bash
+docker build -t iskele360-backend-v8 .
+\`\`\`
+
+2. Container'ı çalıştırın:
+\`\`\`bash
+docker-compose up -d
+\`\`\`
+
+## API Dokümantasyonu
+
+Swagger UI: http://localhost:8080/api-docs
+
+## Lisans
+
+ISC

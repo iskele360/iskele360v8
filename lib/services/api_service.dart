@@ -1,6 +1,7 @@
 import 'dart:io';
-
-import 'package:dio/dio.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:iskele360v7/models/inventory_model.dart';
@@ -21,10 +22,9 @@ class ApiService {
   final Dio _dio = Dio();
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   final Logger _logger = Logger();
+  final SharedPreferences _prefs;
 
-  ApiService._internal() {
-    _initDio();
-  }
+  ApiService._internal() : _prefs = SharedPreferences.getInstance();
 
   void _initDio() {
     _dio.options.baseUrl = AppConstants.apiBaseUrl;
@@ -380,5 +380,140 @@ class ApiService {
     } else {
       return 'Bir hata oluştu: ${e.message}';
     }
+  }
+
+  // Token işlemleri
+  Future<String?> getToken() async {
+    return _prefs.getString(AppConstants.tokenKey);
+  }
+
+  Future<void> setToken(String token) async {
+    await _prefs.setString(AppConstants.tokenKey, token);
+  }
+
+  Future<void> removeToken() async {
+    await _prefs.remove(AppConstants.tokenKey);
+  }
+
+  // Headers
+  Future<Map<String, String>> _getHeaders({bool requiresAuth = true}) async {
+    final headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (requiresAuth) {
+      final token = await getToken();
+      if (token != null) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+    }
+
+    return headers;
+  }
+
+  // Auth işlemleri
+  Future<Map<String, dynamic>> login(String email, String password) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$AppConstants.apiBaseUrl/auth/login'),
+        headers: await _getHeaders(requiresAuth: false),
+        body: jsonEncode({
+          'email': email,
+          'password': password,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        await setToken(data['token']);
+        return data;
+      } else {
+        throw Exception('Login failed: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Login error: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> register({
+    required String firstName,
+    required String lastName,
+    required String email,
+    required String password,
+    String role = 'puantajci',
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$AppConstants.apiBaseUrl/auth/register'),
+        headers: await _getHeaders(requiresAuth: false),
+        body: jsonEncode({
+          'firstName': firstName,
+          'lastName': lastName,
+          'email': email,
+          'password': password,
+          'role': role,
+        }),
+      );
+
+      if (response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        await setToken(data['token']);
+        return data;
+      } else {
+        throw Exception('Registration failed: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Registration error: $e');
+    }
+  }
+
+  // API çağrıları için yardımcı metod
+  Future<dynamic> _handleResponse(http.Response response) async {
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return jsonDecode(response.body);
+    } else if (response.statusCode == 401) {
+      await removeToken();
+      throw Exception('Unauthorized');
+    } else {
+      throw Exception('API error: ${response.body}');
+    }
+  }
+
+  // GET isteği
+  Future<dynamic> get(String endpoint) async {
+    final response = await http.get(
+      Uri.parse('$AppConstants.apiBaseUrl$endpoint'),
+      headers: await _getHeaders(),
+    );
+    return _handleResponse(response);
+  }
+
+  // POST isteği
+  Future<dynamic> post(String endpoint, Map<String, dynamic> data) async {
+    final response = await http.post(
+      Uri.parse('$AppConstants.apiBaseUrl$endpoint'),
+      headers: await _getHeaders(),
+      body: jsonEncode(data),
+    );
+    return _handleResponse(response);
+  }
+
+  // PUT isteği
+  Future<dynamic> put(String endpoint, Map<String, dynamic> data) async {
+    final response = await http.put(
+      Uri.parse('$AppConstants.apiBaseUrl$endpoint'),
+      headers: await _getHeaders(),
+      body: jsonEncode(data),
+    );
+    return _handleResponse(response);
+  }
+
+  // DELETE isteği
+  Future<dynamic> delete(String endpoint) async {
+    final response = await http.delete(
+      Uri.parse('$AppConstants.apiBaseUrl$endpoint'),
+      headers: await _getHeaders(),
+    );
+    return _handleResponse(response);
   }
 }

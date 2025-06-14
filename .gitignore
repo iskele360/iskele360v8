@@ -1,9 +1,50 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# Build
+dist/
+build/
+coverage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Test
+coverage/
+.nyc_output/
+
+# Temp files
+*.tmp
+*.temp
+.cache/
+
 # Miscellaneous
 *.class
-*.log
 *.pyc
 *.swp
-.DS_Store
 .atom/
 .buildlog/
 .history
@@ -14,12 +55,6 @@ migrate_working_dir/
 *.iml
 *.ipr
 *.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
 
 # Flutter/Dart/Pub related
 **/doc/api/

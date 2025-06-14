@@ -1,24 +1,42 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:iskele360v7/models/user_model.dart';
 import 'package:iskele360v7/services/socket_service.dart';
 import 'package:iskele360v7/services/cache_service.dart';
+import 'package:shared_preferences.dart';
+import '../services/api_service.dart';
+import '../constants/app_constants.dart';
 
 class AuthProvider with ChangeNotifier {
   final SocketService _socketService = SocketService();
   final CacheService _cacheService = CacheService();
   final _storage = const FlutterSecureStorage();
+  final ApiService _apiService;
+  final SharedPreferences _prefs;
 
   User? _currentUser;
   bool _isLoading = false;
   String? _error;
+  String? _token;
+  Map<String, dynamic>? _user;
+
+  AuthProvider(this._apiService, this._prefs) {
+    _loadStoredData();
+  }
 
   User? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get error => _error;
   String? get errorMessage => _error;
   String? get userRole => _currentUser?.role;
+  bool get isAuthenticated => _token != null;
+  String? get token => _token;
+  Map<String, dynamic>? get user => _user;
+
+  bool get isAdmin => _user?['role'] == AppConstants.roleAdmin;
+  bool get isPuantajci => _user?['role'] == AppConstants.rolePuantajci;
 
   // Otomatik giriş
   Future<bool> autoLogin() async {
@@ -177,27 +195,13 @@ class AuthProvider with ChangeNotifier {
       _error = null;
       notifyListeners();
 
-      _socketService.emit('login', {
-        'email': email,
-        'password': password,
-      });
+      final response = await _apiService.login(email, password);
+      _token = response['token'];
+      await _saveUserData(response['user']);
 
-      final response = await _waitForSocketResponse('loginResponse');
-
-      if (response['success'] == true) {
-        final user = User.fromJson(response['user']);
-        await _storage.write(key: 'auth_token', value: user.token);
-        await _cacheService.put('users', 'current_user', user.toJson());
-        _currentUser = user;
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else {
-        _error = response['message'] ?? 'Giriş başarısız';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
+      _isLoading = false;
+      notifyListeners();
+      return true;
     } catch (e) {
       _error = 'Giriş yapılamadı: $e';
       _isLoading = false;
@@ -243,14 +247,12 @@ class AuthProvider with ChangeNotifier {
   // Çıkış yap
   Future<void> logout() async {
     try {
-      _isLoading = true;
-      notifyListeners();
-
-      _socketService.emit('logout', {});
-
+      await _apiService.logout();
+      _token = null;
+      _user = null;
       await _storage.delete(key: 'auth_token');
       await _cacheService.delete('users', 'current_user');
-
+      await _prefs.remove(AppConstants.userKey);
       _currentUser = null;
       _isLoading = false;
       notifyListeners();
@@ -314,5 +316,19 @@ class AuthProvider with ChangeNotifier {
     } catch (e) {
       throw 'Socket yanıtı alınamadı: $e';
     }
+  }
+
+  Future<void> _loadStoredData() async {
+    _token = await _apiService.getToken();
+    final userStr = _prefs.getString(AppConstants.userKey);
+    if (userStr != null) {
+      _user = Map<String, dynamic>.from(jsonDecode(userStr));
+    }
+    notifyListeners();
+  }
+
+  Future<void> _saveUserData(Map<String, dynamic> userData) async {
+    await _prefs.setString(AppConstants.userKey, jsonEncode(userData));
+    _user = userData;
   }
 }
