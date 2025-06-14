@@ -26,10 +26,37 @@ let redisClient = null;
 let redisConnected = false;
 
 /**
+ * Redis URL'ini parse et ve gerekli bilgileri çıkar
+ * @param {string} url 
+ * @returns {{endpoint: string, token: string}}
+ */
+const parseRedisUrl = (url) => {
+  // URL'i parse et
+  const parsedUrl = new URL(url);
+  
+  // Token ve endpoint bilgilerini çıkar
+  const token = parsedUrl.password;
+  let endpoint = '';
+  
+  // Eğer URL rediss:// ile başlıyorsa, https:// ile değiştir
+  if (parsedUrl.protocol === 'rediss:') {
+    endpoint = `https://${parsedUrl.host}`;
+  } else {
+    endpoint = `${parsedUrl.protocol}//${parsedUrl.host}`;
+  }
+  
+  return { endpoint, token };
+};
+
+/**
  * Redis bağlantısını başlat
  * @returns {Promise<void>}
  */
 const initRedis = async () => {
+  console.log('Redis yapılandırması kontrol ediliyor...');
+  console.log('REDIS_ENABLED:', REDIS_ENABLED);
+  console.log('REDIS_URL mevcut:', !!REDIS_URL);
+  
   if (!REDIS_ENABLED || !REDIS_URL) {
     console.log('Redis devre dışı veya URL tanımlanmamış, in-memory cache kullanılıyor');
     return;
@@ -37,11 +64,13 @@ const initRedis = async () => {
 
   try {
     console.log('Redis bağlantısı başlatılıyor...');
+    console.log('Redis URL:', REDIS_URL);
     
-    // URL'den token ve endpoint çıkar
-    const url = new URL(REDIS_URL);
-    const token = url.password;
-    const endpoint = `https://${url.hostname}`;
+    // URL'i parse et
+    const { endpoint, token } = parseRedisUrl(REDIS_URL);
+    
+    console.log('Redis endpoint:', endpoint);
+    console.log('Token uzunluğu:', token?.length || 0);
     
     // Upstash Redis client oluştur
     redisClient = new Redis({
@@ -54,6 +83,7 @@ const initRedis = async () => {
     const pingResult = await redisClient.ping();
     console.log('Redis ping başarılı:', pingResult);
     redisConnected = true;
+    console.log('Redis bağlantısı hazır');
     
   } catch (err) {
     console.error('Redis bağlantısı kurulamadı:', {
