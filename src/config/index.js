@@ -11,7 +11,7 @@ module.exports = {
     port: process.env.DB_PORT || 5432,
     name: process.env.DB_NAME || 'iskele360_db_v8',
     user: process.env.DB_USER || 'iskele360_db_v8_user',
-    password: process.env.DB_PASS || 'K9iWuJiLfXTDyT7tAfdSLWsRWCyXmaUw'
+    password: process.env.DB_PASSWORD
   },
   
   // Redis Configuration
@@ -22,8 +22,8 @@ module.exports = {
   
   // JWT Configuration
   jwt: {
-    secret: process.env.JWT_SECRET || 'your-secret-key',
-    expiresIn: process.env.JWT_EXPIRES_IN || '1d'
+    secret: process.env.JWT_SECRET || 'baranreisgizlikey',
+    expiresIn: process.env.JWT_EXPIRES_IN || '24h'
   },
   
   // Cloudinary Configuration

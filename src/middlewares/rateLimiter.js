@@ -1,12 +1,10 @@
 const rateLimit = require('express-rate-limit');
-const config = require('../config');
 
 const limiter = rateLimit({
-  windowMs: config.rateLimiter.windowMs,
-  max: config.rateLimiter.max,
+  windowMs: 15 * 60 * 1000, // 15 dakika
+  max: 100, // IP başına maksimum istek sayısı
   message: {
-    status: 'error',
-    message: 'Too many requests from this IP, please try again later.'
+    message: 'Çok fazla istek gönderdiniz. Lütfen daha sonra tekrar deneyin.'
   }
 });
 

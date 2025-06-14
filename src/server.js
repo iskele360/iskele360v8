@@ -2,47 +2,45 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const { sequelize } = require('./config/database');
+const { syncModels } = require('./models');
+const limiter = require('./middlewares/rateLimiter');
+const errorHandler = require('./middlewares/errorHandler');
+const logger = require('./utils/logger');
+
+// Routes
+const authRoutes = require('./routes/auth');
+const userRoutes = require('./routes/user');
 
 const app = express();
 
 // Middleware
-app.use(cors());
 app.use(helmet());
+app.use(cors());
 app.use(express.json());
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK' });
-});
+app.use(limiter);
 
 // Routes
-app.use('/api/auth', require('./routes/auth'));
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 
 // Error handling
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
-});
+app.use(errorHandler);
 
-// Start server
-const PORT = process.env.PORT || 3000;
-
+// Database connection and model sync
 const startServer = async () => {
   try {
-    // Test database connection
     await sequelize.authenticate();
-    console.log('Database connection successful');
+    logger.info('PostgreSQL bağlantısı başarılı');
 
-    // Sync database
-    await sequelize.sync({ alter: true });
-    console.log('Database synced');
+    await syncModels();
+    logger.info('Modeller senkronize edildi');
 
-    // Start listening
+    const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
+      logger.info(`Server ${PORT} portunda çalışıyor`);
     });
   } catch (error) {
-    console.error('Failed to start server:', error);
+    logger.error('Sunucu başlatılamadı:', error);
     process.exit(1);
   }
 };

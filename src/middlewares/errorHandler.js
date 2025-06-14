@@ -1,60 +1,32 @@
 const logger = require('../utils/logger');
 
-class AppError extends Error {
-  constructor(message, statusCode) {
-    super(message);
-    this.statusCode = statusCode;
-    this.status = `${statusCode}`.startsWith('4') ? 'fail' : 'error';
-    this.isOperational = true;
-
-    Error.captureStackTrace(this, this.constructor);
-  }
-}
-
 const errorHandler = (err, req, res, next) => {
-  err.statusCode = err.statusCode || 500;
-  err.status = err.status || 'error';
+  logger.error(`Error: ${err.message}`);
+  logger.error(err.stack);
 
-  if (process.env.NODE_ENV === 'development') {
-    logger.error('Error 🔥:', {
-      message: err.message,
-      stack: err.stack,
-      status: err.status,
-      statusCode: err.statusCode
+  if (err.name === 'SequelizeValidationError') {
+    return res.status(400).json({
+      message: 'Validasyon hatası',
+      errors: err.errors.map(e => ({
+        field: e.path,
+        message: e.message
+      }))
     });
-
-    res.status(err.statusCode).json({
-      status: err.status,
-      error: err,
-      message: err.message,
-      stack: err.stack
-    });
-  } else {
-    // Log error
-    logger.error('Error 🔥:', {
-      message: err.message,
-      status: err.status,
-      statusCode: err.statusCode
-    });
-
-    // Operational, trusted error: send message to client
-    if (err.isOperational) {
-      res.status(err.statusCode).json({
-        status: err.status,
-        message: err.message
-      });
-    } 
-    // Programming or other unknown error: don't leak error details
-    else {
-      res.status(500).json({
-        status: 'error',
-        message: 'Something went wrong!'
-      });
-    }
   }
+
+  if (err.name === 'SequelizeUniqueConstraintError') {
+    return res.status(409).json({
+      message: 'Bu kayıt zaten mevcut',
+      errors: err.errors.map(e => ({
+        field: e.path,
+        message: e.message
+      }))
+    });
+  }
+
+  return res.status(500).json({
+    message: 'Sunucu hatası'
+  });
 };
 
-module.exports = {
-  AppError,
-  errorHandler
-}; 
+module.exports = errorHandler; 

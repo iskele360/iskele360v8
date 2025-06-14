@@ -1,12 +1,12 @@
 # Base image
-FROM node:18-alpine
+FROM node:20-slim
 
 # Set working directory
-WORKDIR /app
+WORKDIR /usr/src/app
 
 # Install dependencies
 COPY package*.json ./
-RUN npm install --production
+RUN npm install
 
 # Copy source code
 COPY . .
