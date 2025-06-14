@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: __dirname + '/../.env' });
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -8,6 +8,7 @@ const path = require('path');
 const sequelize = require(path.join(__dirname, 'config', 'database'));
 const { Redis } = require('@upstash/redis');
 const cloudinary = require('cloudinary').v2;
+const authRoutes = require('./routes/auth');
 
 // Initialize Express
 const app = express();
@@ -46,7 +47,7 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 // Routes
-app.use('/api/auth', require('./routes/auth'));
+app.use('/api/auth', authRoutes);
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/puantaj', require('./routes/puantaj'));
 
