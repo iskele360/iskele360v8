@@ -1,5 +1,5 @@
 # Base image
-FROM node:18-alpine
+FROM node:20
 
 # Set working directory
 WORKDIR /usr/src/app
@@ -8,12 +8,12 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install --production
+RUN npm install --omit=dev
 
 # Copy source code
 COPY . .
 
-# Set environment variables
+# Set production environment
 ENV NODE_ENV=production
 ENV PORT=3000
 

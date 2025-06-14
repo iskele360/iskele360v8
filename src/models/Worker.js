@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('../config/database');
+const sequelize = require('../config/database');
 const cloudinaryService = require('../services/cloudinary.service');
 
 const Worker = sequelize.define('Worker', {
@@ -16,17 +16,36 @@ const Worker = sequelize.define('Worker', {
     type: DataTypes.STRING,
     allowNull: false
   },
+  tcNo: {
+    type: DataTypes.STRING(11),
+    allowNull: false,
+    unique: true,
+    validate: {
+      len: [11, 11],
+      isNumeric: true
+    }
+  },
+  phoneNumber: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  address: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  photoUrl: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  status: {
+    type: DataTypes.ENUM('active', 'inactive'),
+    defaultValue: 'active'
+  },
   nationalId: {
     type: DataTypes.STRING,
     unique: true
   },
   phone: {
-    type: DataTypes.STRING
-  },
-  address: {
-    type: DataTypes.TEXT
-  },
-  photoUrl: {
     type: DataTypes.STRING
   },
   isActive: {
@@ -35,6 +54,7 @@ const Worker = sequelize.define('Worker', {
   },
   companyId: {
     type: DataTypes.UUID,
+    allowNull: false,
     references: {
       model: 'Companies',
       key: 'id'
@@ -48,18 +68,9 @@ const Worker = sequelize.define('Worker', {
       key: 'id'
     }
   },
-  tcNo: {
-    type: DataTypes.STRING(11),
-    allowNull: false,
-    unique: true,
-    validate: {
-      len: [11, 11],
-      isNumeric: true
-    }
-  },
   birthDate: {
     type: DataTypes.DATEONLY,
-    allowNull: false
+    allowNull: true
   },
   startDate: {
     type: DataTypes.DATEONLY,
@@ -104,6 +115,15 @@ const Worker = sequelize.define('Worker', {
 }, {
   timestamps: true,
   paranoid: true, // Soft delete
+  indexes: [
+    {
+      unique: true,
+      fields: ['tcNo']
+    },
+    {
+      fields: ['companyId']
+    }
+  ],
   hooks: {
     beforeDestroy: async (worker) => {
       if (worker.photoPublicId) {

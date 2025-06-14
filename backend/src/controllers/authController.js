@@ -2,6 +2,8 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const config = require('../../config');
 const validator = require('validator');
+const redis = require('../services/redisService');
+require('dotenv').config();
 
 // JWT token oluşturma
 const signToken = (id) => {
@@ -27,150 +29,169 @@ const createSendToken = (user, statusCode, res) => {
 };
 
 // JWT Token oluşturma fonksiyonu
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '30d'
-  });
+const generateToken = (user) => {
+  return jwt.sign(
+    { id: user.id, email: user.email, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN }
+  );
 };
 
 // Kullanıcı kaydı
-exports.register = async (req, res) => {
+const register = async (req, res) => {
   try {
-    const { name, surname, email, password, role } = req.body;
+    const { email, password, firstName, lastName } = req.body;
 
-    // Gerekli alanların kontrolü
-    if (!name || !surname || !email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Lütfen tüm zorunlu alanları doldurun'
-      });
-    }
-
-    // E-posta formatı kontrolü
-    if (!validator.isEmail(email)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Geçerli bir e-posta adresi girin'
-      });
-    }
-
-    // Şifre uzunluk kontrolü
-    if (password.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: 'Şifre en az 6 karakter olmalıdır'
-      });
-    }
-
-    // E-postanın zaten kayıtlı olup olmadığını kontrol et
-    const existingUser = await User.findOne({ email });
-
+    // Check if user already exists
+    const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: 'Bu e-posta adresi zaten kullanılıyor'
+        message: 'User already exists'
       });
     }
 
-    // Puantajcı oluşturan kişinin bilgilerini ekle
-    let userData = {
-      name,
-      surname,
+    // Create new user
+    const user = await User.create({
       email,
       password,
-      role: role || 'puantajcı' // Varsayılan olarak puantajcı
-    };
+      firstName,
+      lastName,
+      role: 'user'
+    });
 
-    // Eğer token ile giriş yapmış bir kullanıcı varsa ve işçi veya malzemeci oluşturuyorsa
-    if (req.user && (role === 'isci' || role === 'malzemeci')) {
-      userData.createdBy = req.user._id;
-      userData.supervisorId = req.user._id;
-      
-      // İşçi veya malzemeci için benzersiz kod oluştur
-      if (role === 'isci') {
-        // 6 haneli rastgele kod
-        userData.code = Math.floor(100000 + Math.random() * 900000).toString();
-      } else if (role === 'malzemeci') {
-        // 8 haneli rastgele kod
-        userData.code = Math.floor(10000000 + Math.random() * 90000000).toString();
-      }
-    }
+    // Generate token
+    const token = generateToken(user);
 
-    // Yeni kullanıcı oluştur
-    const user = await User.create(userData);
-
-    // Başarılı yanıt
     res.status(201).json({
       success: true,
-      token: generateToken(user._id),
-      data: user
+      data: {
+        user: user.toPublicJSON(),
+        token
+      }
     });
   } catch (error) {
-    console.error('Kayıt hatası:', error);
+    console.error('Registration error:', error);
     res.status(500).json({
       success: false,
-      message: 'Sunucu hatası, lütfen daha sonra tekrar deneyin'
+      message: 'Error during registration'
     });
   }
 };
 
 // Kullanıcı girişi
-exports.login = async (req, res) => {
+const login = async (req, res) => {
   try {
-    const { email, password, code } = req.body;
+    const { email, password } = req.body;
 
-    // E-posta veya kod ile giriş kontrolü
-    if ((!email && !code) || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Lütfen giriş bilgilerinizi girin'
-      });
-    }
-
-    let user;
-
-    // E-posta veya kod ile kullanıcıyı bul
-    if (email) {
-      user = await User.findOne({ email });
-    } else if (code) {
-      user = await User.findOne({ code });
-    }
-
-    // Kullanıcı bulunamadı
+    // Find user
+    const user = await User.findOne({ where: { email } });
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Geçersiz giriş bilgileri'
+        message: 'Invalid credentials'
       });
     }
 
-    // Şifre kontrolü
-    const isPasswordCorrect = await user.comparePassword(password);
-
-    if (!isPasswordCorrect) {
+    // Check password
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
       return res.status(401).json({
         success: false,
-        message: 'Geçersiz giriş bilgileri'
+        message: 'Invalid credentials'
       });
     }
 
-    // Başarılı yanıt
-    res.status(200).json({
+    // Check if user is active
+    if (!user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account is disabled'
+      });
+    }
+
+    // Generate token
+    const token = generateToken(user);
+
+    // Update last login
+    user.lastLogin = new Date();
+    await user.save();
+
+    // Cache user data in Redis
+    await redis.set(`user:${user.id}`, JSON.stringify(user.toPublicJSON()), 'EX', 3600); // 1 hour
+
+    res.json({
       success: true,
-      token: generateToken(user._id),
-      data: user
+      data: {
+        user: user.toPublicJSON(),
+        token
+      }
     });
   } catch (error) {
-    console.error('Giriş hatası:', error);
+    console.error('Login error:', error);
     res.status(500).json({
       success: false,
-      message: 'Sunucu hatası, lütfen daha sonra tekrar deneyin'
+      message: 'Error during login'
+    });
+  }
+};
+
+const logout = async (req, res) => {
+  try {
+    // Remove user data from Redis
+    await redis.del(`user:${req.user.id}`);
+
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error during logout'
+    });
+  }
+};
+
+const me = async (req, res) => {
+  try {
+    // Try to get user from Redis first
+    const cachedUser = await redis.get(`user:${req.user.id}`);
+    if (cachedUser) {
+      return res.json({
+        success: true,
+        data: JSON.parse(cachedUser)
+      });
+    }
+
+    // If not in Redis, get from DB
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Cache user data
+    await redis.set(`user:${user.id}`, JSON.stringify(user.toPublicJSON()), 'EX', 3600);
+
+    res.json({
+      success: true,
+      data: user.toPublicJSON()
+    });
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting user data'
     });
   }
 };
 
 // Kullanıcı profili
-exports.getProfile = async (req, res) => {
+const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
 
@@ -195,7 +216,7 @@ exports.getProfile = async (req, res) => {
 };
 
 // Oturum doğrulama middleware
-exports.protect = async (req, res, next) => {
+const protect = async (req, res, next) => {
   try {
     // 1) Token var mı kontrol et
     let token;
@@ -237,7 +258,7 @@ exports.protect = async (req, res, next) => {
 };
 
 // Rol bazlı yetkilendirme
-exports.restrictTo = (...roles) => {
+const restrictTo = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({
@@ -247,4 +268,14 @@ exports.restrictTo = (...roles) => {
     }
     next();
   };
+};
+
+module.exports = {
+  register,
+  login,
+  logout,
+  me,
+  getProfile,
+  protect,
+  restrictTo
 }; 

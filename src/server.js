@@ -1,50 +1,84 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const { sequelize } = require('./config/database');
-const { syncModels } = require('./models');
-const limiter = require('./middlewares/rateLimiter');
-const errorHandler = require('./middlewares/errorHandler');
-const logger = require('./utils/logger');
+const sequelize = require('./config/database');
+const { Redis } = require('@upstash/redis');
+const cloudinary = require('cloudinary').v2;
 
-// Routes
-const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/user');
-const workerRoutes = require('./routes/worker');
-
+// Initialize Express
 const app = express();
 
 // Middleware
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*'
+}));
 app.use(helmet());
-app.use(cors());
 app.use(express.json());
-app.use(limiter);
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/workers', workerRoutes);
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
-// Error handling
-app.use(errorHandler);
+// Configure Redis
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN
+});
 
-// Database connection and model sync
-const startServer = async () => {
+// Health check endpoint
+app.get('/health', async (req, res) => {
   try {
+    // Test database connection
     await sequelize.authenticate();
-    logger.info('PostgreSQL bağlantısı başarılı');
-
-    await syncModels();
-    logger.info('Modeller senkronize edildi');
-
-    const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => {
-      logger.info(`Server ${PORT} portunda çalışıyor`);
+    
+    // Test Redis connection
+    await redis.ping();
+    
+    res.status(200).json({
+      status: 'healthy',
+      services: {
+        database: 'connected',
+        redis: 'connected',
+        cloudinary: 'configured'
+      },
+      environment: process.env.NODE_ENV,
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
-    logger.error('Sunucu başlatılamadı:', error);
+    res.status(500).json({
+      status: 'unhealthy',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Initialize services
+const initializeServices = async () => {
+  try {
+    // Test PostgreSQL connection
+    await sequelize.authenticate();
+    console.log('✅ PostgreSQL connection successful');
+    
+    // Test Redis connection
+    await redis.ping();
+    console.log('✅ Redis connection successful');
+    
+    console.log('✅ Cloudinary configured');
+    
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+      console.log(`🚀 Server is running on port ${PORT}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
+    });
+  } catch (error) {
+    console.error('❌ Service initialization error:', error);
     process.exit(1);
   }
 };
 
-startServer(); 
+initializeServices(); 

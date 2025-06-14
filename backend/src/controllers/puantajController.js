@@ -1,655 +1,473 @@
+const { Op } = require('sequelize');
 const Puantaj = require('../models/Puantaj');
 const User = require('../models/User');
-const socketService = require('../services/socketService');
-const cacheService = require('../services/cache');
-const parallelQueryService = require('../services/parallelQueryService');
-const mongoose = require('mongoose');
+const redis = require('../services/redisService');
+const sequelize = require('sequelize');
 
-/**
- * Dashboard verilerini getir
- * Tüm gerekli verileri parallel olarak ve önbellekli şekilde sorgular
- */
-exports.getDashboardData = async (req, res) => {
+const getAllPuantaj = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const { startDate, endDate, status, location } = req.query;
+    const where = {};
 
-    // Sayfalama ve filtreleme seçenekleri
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const todayOnly = req.query.todayOnly === 'true';
-    const useCache = req.query.noCache !== 'true';
+    // Date range filter
+    if (startDate || endDate) {
+      where.date = {};
+      if (startDate) where.date[Op.gte] = startDate;
+      if (endDate) where.date[Op.lte] = endDate;
+    }
 
-    // Tüm verileri parallel olarak getir
-    const dashboardData = await parallelQueryService.fetchDashboardData(userId, {
-      workerLimit: limit,
-      puantajLimit: limit,
-      todayOnly,
-      useCache
+    // Status filter
+    if (status) where.status = status;
+
+    // Location filter
+    if (location) where.location = location;
+
+    // Role-based filtering
+    if (req.user.role === 'user') {
+      where.userId = req.user.id;
+    } else if (req.user.role === 'manager') {
+      // Managers can see their team's records
+      const teamMembers = await User.findAll({
+        where: { supervisorId: req.user.id },
+        attributes: ['id']
+      });
+      where.userId = {
+        [Op.in]: teamMembers.map(member => member.id)
+      };
+    }
+    // Admins can see all records
+
+    const puantajRecords = await Puantaj.findAll({
+      where,
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'firstName', 'lastName', 'email']
+      }],
+      order: [['date', 'DESC']]
     });
 
-    // Verileri gönder
-    res.status(200).json({
+    res.json({
       success: true,
-      ...dashboardData,
-      pagination: {
-        page,
-        limit,
-        totalWorkers: dashboardData.workers.length,
-        totalSuppliers: dashboardData.suppliers.length,
-        totalPuantaj: dashboardData.puantaj.totalCount,
-        hasMoreWorkers: dashboardData.workers.length === limit,
-        hasMorePuantaj: dashboardData.puantaj.puantajList.length < dashboardData.puantaj.totalCount
-      }
+      data: puantajRecords
     });
   } catch (error) {
-    console.error('Dashboard data error:', error);
+    console.error('Get all puantaj error:', error);
     res.status(500).json({
       success: false,
-      message: 'Sunucu hatası, lütfen daha sonra tekrar deneyin'
+      message: 'Error getting puantaj records'
     });
   }
 };
 
-/**
- * Yeni puantaj kaydı oluştur
- */
-exports.createPuantaj = async (req, res) => {
+const getPuantajById = async (req, res) => {
   try {
-    const {
-      isciId, 
-      baslangicSaati, 
-      bitisSaati, 
-      calismaSuresi, 
-      projeId, 
-      projeBilgisi,
-      aciklama,
-      tarih
-    } = req.body;
+    const puantaj = await Puantaj.findByPk(req.params.id, {
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id', 'firstName', 'lastName', 'email']
+      }]
+    });
 
-    // Kullanıcı ID'yi MongoDB ObjectId'ye çevir
-    const isciObjectId = mongoose.Types.ObjectId.isValid(isciId) 
-      ? new mongoose.Types.ObjectId(isciId) 
-      : null;
-    
-    if (!isciObjectId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Geçersiz işçi ID'
-      });
-    }
-
-    // İşçinin varlığını kontrol et
-    const isci = await User.findById(isciObjectId);
-    
-    if (!isci) {
+    if (!puantaj) {
       return res.status(404).json({
         success: false,
-        message: 'İşçi bulunamadı'
+        message: 'Puantaj record not found'
       });
     }
-    
-    // İşçinin puantajcıya ait olup olmadığını kontrol et
-    if (isci.createdBy && isci.createdBy.toString() !== req.user._id.toString()) {
+
+    // Check permissions
+    if (req.user.role === 'user' && puantaj.userId !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: 'Sadece kendi oluşturduğunuz işçiler için puantaj kaydı oluşturabilirsiniz'
+        message: 'Not authorized'
       });
     }
 
-    // Tarih değerini işle
-    const puantajTarihi = tarih ? new Date(tarih) : new Date();
+    res.json({
+      success: true,
+      data: puantaj
+    });
+  } catch (error) {
+    console.error('Get puantaj error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting puantaj record'
+    });
+  }
+};
 
-    // Geçerli bir tarih değeri olduğundan emin ol
-    if (isNaN(puantajTarihi.getTime())) {
+const createPuantaj = async (req, res) => {
+  try {
+    const { date, startTime, endTime, location, notes } = req.body;
+
+    // Check if puantaj already exists for this date
+    const existingPuantaj = await Puantaj.findOne({
+      where: {
+        userId: req.user.id,
+        date
+      }
+    });
+
+    if (existingPuantaj) {
       return res.status(400).json({
         success: false,
-        message: 'Geçersiz tarih formatı'
+        message: 'Puantaj record already exists for this date'
       });
     }
 
-    // Puantaj kaydı oluştur
     const puantaj = await Puantaj.create({
-      isciId: isciObjectId,
-      puantajciId: req.user._id,
-      baslangicSaati,
-      bitisSaati,
-      calismaSuresi,
-      projeId,
-      projeBilgisi,
-      aciklama: aciklama || '',
-      tarih: puantajTarihi
+      userId: req.user.id,
+      date,
+      startTime,
+      endTime,
+      location,
+      notes
     });
 
-    // Önbelleği temizle
-    await cacheService.deleteByPrefix(`user_${req.user._id}_dashboard`);
+    // Clear cache
+    await redis.del(`puantaj:user:${req.user.id}`);
 
-    // Socket.IO ile işçiye bildirim gönder
-    socketService.emitToUser(isciId, 'puantaj_created', {
-      puantaj,
-      message: 'Yeni puantaj kaydı oluşturuldu'
-    });
-
-    // Başarılı yanıt
     res.status(201).json({
       success: true,
       data: puantaj
     });
   } catch (error) {
-    console.error('Puantaj oluşturma hatası:', error);
+    console.error('Create puantaj error:', error);
     res.status(500).json({
       success: false,
-      message: 'Sunucu hatası, lütfen daha sonra tekrar deneyin'
+      message: 'Error creating puantaj record'
     });
   }
 };
 
-/**
- * Puantaj kaydını güncelle
- */
-exports.updatePuantaj = async (req, res) => {
+const updatePuantaj = async (req, res) => {
   try {
-    const { id } = req.params;
-    const {
-      baslangicSaati, 
-      bitisSaati, 
-      calismaSuresi, 
-      projeId, 
-      projeBilgisi,
-      aciklama,
-      durum
-    } = req.body;
-
-    // Puantaj kaydını bul
-    const puantaj = await Puantaj.findById(id);
-
+    const puantaj = await Puantaj.findByPk(req.params.id);
     if (!puantaj) {
       return res.status(404).json({
         success: false,
-        message: 'Puantaj kaydı bulunamadı'
+        message: 'Puantaj record not found'
       });
     }
 
-    // Sadece puantaj kaydını oluşturan kişi güncelleyebilir
-    if (puantaj.puantajciId.toString() !== req.user._id.toString()) {
+    // Check permissions
+    if (req.user.role === 'user' && puantaj.userId !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: 'Sadece kendi oluşturduğunuz puantaj kayıtlarını güncelleyebilirsiniz'
+        message: 'Not authorized'
       });
     }
 
-    // Güncelleme
-    const updatedPuantaj = await Puantaj.findByIdAndUpdate(
-      id,
-      {
-        baslangicSaati: baslangicSaati || puantaj.baslangicSaati,
-        bitisSaati: bitisSaati || puantaj.bitisSaati,
-        calismaSuresi: calismaSuresi || puantaj.calismaSuresi,
-        projeId: projeId || puantaj.projeId,
-        projeBilgisi: projeBilgisi || puantaj.projeBilgisi,
-        aciklama: aciklama !== undefined ? aciklama : puantaj.aciklama,
-        durum: durum || puantaj.durum
-      },
-      { new: true, runValidators: true }
-    );
+    // Only allow updates if status is pending
+    if (puantaj.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot update approved or rejected puantaj'
+      });
+    }
 
-    // Önbelleği temizle
-    await cacheService.deleteByPrefix(`user_${req.user._id}_dashboard`);
+    const { startTime, endTime, location, notes } = req.body;
 
-    // Socket.IO ile işçiye bildirim gönder
-    socketService.emitToUser(puantaj.isciId, 'puantaj_updated', {
-      puantaj: updatedPuantaj,
-      message: 'Puantaj kaydı güncellendi'
+    await puantaj.update({
+      startTime: startTime || puantaj.startTime,
+      endTime: endTime || puantaj.endTime,
+      location: location || puantaj.location,
+      notes: notes || puantaj.notes
     });
 
-    // Başarılı yanıt
-    res.status(200).json({
+    // Clear cache
+    await redis.del(`puantaj:user:${puantaj.userId}`);
+
+    res.json({
       success: true,
-      data: updatedPuantaj
+      data: puantaj
     });
   } catch (error) {
-    console.error('Puantaj güncelleme hatası:', error);
+    console.error('Update puantaj error:', error);
     res.status(500).json({
       success: false,
-      message: 'Sunucu hatası, lütfen daha sonra tekrar deneyin'
+      message: 'Error updating puantaj record'
     });
   }
 };
 
-/**
- * Puantaj kaydını sil
- */
-exports.deletePuantaj = async (req, res) => {
+const deletePuantaj = async (req, res) => {
   try {
-    const { id } = req.params;
-
-    // Puantaj kaydını bul
-    const puantaj = await Puantaj.findById(id);
-
+    const puantaj = await Puantaj.findByPk(req.params.id);
     if (!puantaj) {
       return res.status(404).json({
         success: false,
-        message: 'Puantaj kaydı bulunamadı'
+        message: 'Puantaj record not found'
       });
     }
 
-    // Sadece puantaj kaydını oluşturan kişi silebilir
-    if (puantaj.puantajciId.toString() !== req.user._id.toString()) {
+    // Check permissions
+    if (req.user.role === 'user' && puantaj.userId !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: 'Sadece kendi oluşturduğunuz puantaj kayıtlarını silebilirsiniz'
+        message: 'Not authorized'
       });
     }
 
-    // Puantaj kaydını sil
-    await Puantaj.findByIdAndDelete(id);
+    // Only allow deletion if status is pending
+    if (puantaj.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete approved or rejected puantaj'
+      });
+    }
 
-    // Önbelleği temizle
-    await cacheService.deleteByPrefix(`user_${req.user._id}_dashboard`);
+    await puantaj.destroy();
 
-    // Socket.IO ile işçiye bildirim gönder
-    socketService.emitToUser(puantaj.isciId, 'puantaj_deleted', {
-      puantajId: id,
-      message: 'Puantaj kaydı silindi'
-    });
+    // Clear cache
+    await redis.del(`puantaj:user:${puantaj.userId}`);
 
-    // Başarılı yanıt
-    res.status(200).json({
+    res.json({
       success: true,
-      message: 'Puantaj kaydı başarıyla silindi'
+      message: 'Puantaj record deleted successfully'
     });
   } catch (error) {
-    console.error('Puantaj silme hatası:', error);
+    console.error('Delete puantaj error:', error);
     res.status(500).json({
       success: false,
-      message: 'Sunucu hatası, lütfen daha sonra tekrar deneyin'
+      message: 'Error deleting puantaj record'
     });
   }
 };
 
-/**
- * İşçinin puantaj kayıtlarını getir (sayfalı)
- */
-exports.getIsciPuantajlari = async (req, res) => {
+const approvePuantaj = async (req, res) => {
   try {
-    const { isciId } = req.params;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const skip = (page - 1) * limit;
-    
-    // Önbellek anahtarı
-    const cacheKey = `isci_${isciId}_puantaj_${page}_${limit}`;
-    const cachedData = await cacheService.get(cacheKey);
-    
-    if (cachedData) {
-      return res.status(200).json(cachedData);
-    }
-    
-    // MongoDB ObjectId'ye çevir
-    const isciObjectId = mongoose.Types.ObjectId.isValid(isciId) 
-      ? new mongoose.Types.ObjectId(isciId) 
-      : null;
-    
-    if (!isciObjectId) {
-      return res.status(400).json({
+    // Only managers can approve
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({
         success: false,
-        message: 'Geçersiz işçi ID'
+        message: 'Not authorized'
       });
     }
-    
-    // İşçinin varlığını kontrol et
-    const isci = await User.findById(isciObjectId);
-    
-    if (!isci) {
+
+    const puantaj = await Puantaj.findByPk(req.params.id);
+    if (!puantaj) {
       return res.status(404).json({
         success: false,
-        message: 'İşçi bulunamadı'
+        message: 'Puantaj record not found'
       });
     }
-    
-    // İşçi kendi puantajlarını görebilir veya onu oluşturan puantajcı görebilir
-    if (req.user.role === 'isci' && req.user._id.toString() !== isciId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Sadece kendi puantaj kayıtlarınızı görüntüleyebilirsiniz'
-      });
-    }
-    
-    if (req.user.role === 'puantajcı' && isci.createdBy && isci.createdBy.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Sadece kendi oluşturduğunuz işçilerin puantaj kayıtlarını görüntüleyebilirsiniz'
-      });
-    }
-    
-    // Paralel sorguları tanımla
-    const queries = [
-      {
-        query: () => Puantaj.countDocuments({ isciId: isciObjectId })
-      },
-      {
-        query: () => Puantaj.find({ isciId: isciObjectId })
-          .sort({ tarih: -1, createdAt: -1 })
-          .skip(skip)
-          .limit(limit)
+
+    // Check if the user is under this manager
+    if (req.user.role === 'manager') {
+      const user = await User.findByPk(puantaj.userId);
+      if (user.supervisorId !== req.user.id) {
+        return res.status(403).json({
+          success: false,
+          message: 'Not authorized'
+        });
       }
-    ];
-    
-    // Paralel sorguları çalıştır
-    const [totalCount, puantajlar] = await parallelQueryService.executeParallel(queries, false);
-    
-    // Yanıt formatla
-    const response = {
+    }
+
+    await puantaj.update({
+      status: 'approved',
+      approvedBy: req.user.id,
+      approvedAt: new Date()
+    });
+
+    // Clear cache
+    await redis.del(`puantaj:user:${puantaj.userId}`);
+
+    res.json({
       success: true,
-      count: puantajlar.length,
-      total: totalCount,
-      pagination: {
-        page,
-        limit,
-        totalPages: Math.ceil(totalCount / limit),
-        hasNextPage: skip + puantajlar.length < totalCount,
-        hasPrevPage: page > 1
-      },
-      data: puantajlar
-    };
-    
-    // Önbelleğe kaydet (5 dakika)
-    await cacheService.set(cacheKey, response, 5 * 60 * 1000);
-    
-    // Başarılı yanıt
-    res.status(200).json(response);
+      data: puantaj
+    });
   } catch (error) {
-    console.error('Puantaj listeleme hatası:', error);
+    console.error('Approve puantaj error:', error);
     res.status(500).json({
       success: false,
-      message: 'Sunucu hatası, lütfen daha sonra tekrar deneyin'
+      message: 'Error approving puantaj record'
     });
   }
 };
 
-/**
- * Puantajcının oluşturduğu tüm puantaj kayıtlarını getir (sayfalı)
- */
-exports.getPuantajciPuantajlari = async (req, res) => {
+const rejectPuantaj = async (req, res) => {
   try {
-    // Puantajcı ID'si (varsayılan olarak giriş yapan kullanıcı)
-    const puantajciId = req.params.puantajciId || req.user._id;
-    
-    // Sayfalama parametreleri
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const skip = (page - 1) * limit;
-    
-    // Filtreleme parametreleri
-    const tarihBaslangic = req.query.baslangicTarihi ? new Date(req.query.baslangicTarihi) : null;
-    const tarihBitis = req.query.bitisTarihi ? new Date(req.query.bitisTarihi) : null;
-    const projeId = req.query.projeId || null;
-    const isciId = req.query.isciId || null;
-    const durum = req.query.durum || null;
-    
-    // Önbellek anahtarı
-    const cacheKey = `puantajci_${puantajciId}_puantaj_${page}_${limit}_${tarihBaslangic}_${tarihBitis}_${projeId}_${isciId}_${durum}`;
-    const cachedData = await cacheService.get(cacheKey);
-    
-    if (cachedData) {
-      return res.status(200).json(cachedData);
-    }
-    
-    // MongoDB ObjectId'ye çevir
-    const puantajciObjectId = mongoose.Types.ObjectId.isValid(puantajciId) 
-      ? new mongoose.Types.ObjectId(puantajciId) 
-      : null;
-    
-    if (!puantajciObjectId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Geçersiz puantajcı ID'
-      });
-    }
-    
-    // Farklı bir puantajcının kayıtlarını görüntülemeye çalışırken yetki kontrolü
-    if (req.params.puantajciId && req.params.puantajciId !== req.user._id.toString() && req.user.role !== 'admin') {
+    // Only managers can reject
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        message: 'Sadece kendi oluşturduğunuz puantaj kayıtlarını görüntüleyebilirsiniz'
+        message: 'Not authorized'
       });
     }
-    
-    // Filtre oluştur
-    const filter = { puantajciId: puantajciObjectId };
-    
-    // Tarih filtresi
-    if (tarihBaslangic && tarihBitis) {
-      filter.tarih = { $gte: tarihBaslangic, $lte: tarihBitis };
-    } else if (tarihBaslangic) {
-      filter.tarih = { $gte: tarihBaslangic };
-    } else if (tarihBitis) {
-      filter.tarih = { $lte: tarihBitis };
+
+    const puantaj = await Puantaj.findByPk(req.params.id);
+    if (!puantaj) {
+      return res.status(404).json({
+        success: false,
+        message: 'Puantaj record not found'
+      });
     }
-    
-    // Proje filtresi
-    if (projeId) {
-      filter.projeId = projeId;
-    }
-    
-    // İşçi filtresi
-    if (isciId) {
-      filter.isciId = mongoose.Types.ObjectId.isValid(isciId) 
-        ? new mongoose.Types.ObjectId(isciId) 
-        : isciId;
-    }
-    
-    // Durum filtresi
-    if (durum) {
-      filter.durum = durum;
-    }
-    
-    // Paralel sorguları tanımla
-    const queries = [
-      {
-        query: () => Puantaj.countDocuments(filter)
-      },
-      {
-        query: () => Puantaj.find(filter)
-          .sort({ tarih: -1, createdAt: -1 })
-          .skip(skip)
-          .limit(limit)
-          .populate('isciId', 'name surname code')
+
+    // Check if the user is under this manager
+    if (req.user.role === 'manager') {
+      const user = await User.findByPk(puantaj.userId);
+      if (user.supervisorId !== req.user.id) {
+        return res.status(403).json({
+          success: false,
+          message: 'Not authorized'
+        });
       }
-    ];
-    
-    // Paralel sorguları çalıştır
-    const [totalCount, puantajlar] = await parallelQueryService.executeParallel(queries, false);
-    
-    // Yanıt formatla
-    const response = {
+    }
+
+    await puantaj.update({
+      status: 'rejected',
+      approvedBy: req.user.id,
+      approvedAt: new Date()
+    });
+
+    // Clear cache
+    await redis.del(`puantaj:user:${puantaj.userId}`);
+
+    res.json({
       success: true,
-      count: puantajlar.length,
-      total: totalCount,
-      pagination: {
-        page,
-        limit,
-        totalPages: Math.ceil(totalCount / limit),
-        hasNextPage: skip + puantajlar.length < totalCount,
-        hasPrevPage: page > 1
-      },
-      data: puantajlar
-    };
-    
-    // Önbelleğe kaydet (3 dakika)
-    await cacheService.set(cacheKey, response, 3 * 60 * 1000);
-    
-    // Başarılı yanıt
-    res.status(200).json(response);
+      data: puantaj
+    });
   } catch (error) {
-    console.error('Puantaj listeleme hatası:', error);
+    console.error('Reject puantaj error:', error);
     res.status(500).json({
       success: false,
-      message: 'Sunucu hatası, lütfen daha sonra tekrar deneyin'
+      message: 'Error rejecting puantaj record'
     });
   }
 };
 
-/**
- * Özet istatistikleri getir
- */
-exports.getPuantajStats = async (req, res) => {
+const getUserPuantaj = async (req, res) => {
   try {
-    const userId = req.user._id;
-    
-    // Önbellek anahtarı
-    const cacheKey = `user_${userId}_puantaj_stats`;
-    const cachedData = await cacheService.get(cacheKey);
-    
-    if (cachedData) {
-      return res.status(200).json({
+    const { startDate, endDate, status } = req.query;
+    const userId = req.params.userId;
+
+    // Check permissions
+    if (req.user.role === 'user' && userId !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized'
+      });
+    }
+
+    // Try to get from cache first
+    const cacheKey = `puantaj:user:${userId}`;
+    const cachedData = await redis.get(cacheKey);
+    if (cachedData && !startDate && !endDate && !status) {
+      return res.json({
         success: true,
-        data: cachedData
+        data: JSON.parse(cachedData)
       });
     }
-    
-    // Zaman aralıkları
-    const now = new Date();
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-    
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay());
-    startOfWeek.setHours(0, 0, 0, 0);
-    
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    // Aggregation pipeline kullanarak istatistikleri hesapla
-    const stats = await Puantaj.aggregate([
-      {
-        $match: {
-          puantajciId: userId
-        }
-      },
-      {
-        $facet: {
-          totalStats: [
-            {
-              $group: {
-                _id: null,
-                count: { $sum: 1 },
-                totalHours: { $sum: '$calismaSuresi' }
-              }
-            }
-          ],
-          todayStats: [
-            {
-              $match: {
-                tarih: { $gte: today }
-              }
-            },
-            {
-              $group: {
-                _id: null,
-                count: { $sum: 1 },
-                totalHours: { $sum: '$calismaSuresi' }
-              }
-            }
-          ],
-          weekStats: [
-            {
-              $match: {
-                tarih: { $gte: startOfWeek }
-              }
-            },
-            {
-              $group: {
-                _id: null,
-                count: { $sum: 1 },
-                totalHours: { $sum: '$calismaSuresi' }
-              }
-            }
-          ],
-          monthStats: [
-            {
-              $match: {
-                tarih: { $gte: startOfMonth }
-              }
-            },
-            {
-              $group: {
-                _id: null,
-                count: { $sum: 1 },
-                totalHours: { $sum: '$calismaSuresi' }
-              }
-            }
-          ],
-          projectStats: [
-            {
-              $group: {
-                _id: '$projeId',
-                projectName: { $first: '$projeBilgisi' },
-                count: { $sum: 1 },
-                totalHours: { $sum: '$calismaSuresi' }
-              }
-            },
-            {
-              $sort: { totalHours: -1 }
-            },
-            {
-              $limit: 5
-            }
-          ],
-          workerStats: [
-            {
-              $group: {
-                _id: '$isciId',
-                count: { $sum: 1 },
-                totalHours: { $sum: '$calismaSuresi' }
-              }
-            },
-            {
-              $sort: { totalHours: -1 }
-            },
-            {
-              $limit: 5
-            }
-          ]
-        }
-      }
-    ]);
-    
-    // İşçi bilgilerini getir
-    const workerIds = stats[0].workerStats.map(stat => stat._id);
-    const workers = await User.find({ _id: { $in: workerIds } }).select('name surname code');
-    
-    // İşçi bilgilerini ekle
-    const workerStatsWithNames = stats[0].workerStats.map(stat => {
-      const worker = workers.find(w => w._id.toString() === stat._id.toString());
-      return {
-        ...stat,
-        name: worker ? `${worker.name} ${worker.surname}` : 'Bilinmeyen İşçi',
-        code: worker ? worker.code : ''
-      };
+
+    const where = { userId };
+
+    // Date range filter
+    if (startDate || endDate) {
+      where.date = {};
+      if (startDate) where.date[Op.gte] = startDate;
+      if (endDate) where.date[Op.lte] = endDate;
+    }
+
+    // Status filter
+    if (status) where.status = status;
+
+    const puantajRecords = await Puantaj.findAll({
+      where,
+      order: [['date', 'DESC']]
     });
-    
-    // Sonuçları formatla
-    const formattedStats = {
-      total: stats[0].totalStats[0] || { count: 0, totalHours: 0 },
-      today: stats[0].todayStats[0] || { count: 0, totalHours: 0 },
-      week: stats[0].weekStats[0] || { count: 0, totalHours: 0 },
-      month: stats[0].monthStats[0] || { count: 0, totalHours: 0 },
-      projects: stats[0].projectStats || [],
-      workers: workerStatsWithNames || []
-    };
-    
-    // Önbelleğe kaydet (10 dakika)
-    await cacheService.set(cacheKey, formattedStats, 10 * 60 * 1000);
-    
-    // Başarılı yanıt
-    res.status(200).json({
+
+    // Cache the results
+    if (!startDate && !endDate && !status) {
+      await redis.set(cacheKey, JSON.stringify(puantajRecords), 'EX', 3600); // 1 hour
+    }
+
+    res.json({
       success: true,
-      data: formattedStats
+      data: puantajRecords
     });
   } catch (error) {
-    console.error('İstatistik hatası:', error);
+    console.error('Get user puantaj error:', error);
     res.status(500).json({
       success: false,
-      message: 'Sunucu hatası, lütfen daha sonra tekrar deneyin'
+      message: 'Error getting user puantaj records'
     });
   }
+};
+
+const getPuantajStats = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const where = {};
+
+    // Date range filter
+    if (startDate || endDate) {
+      where.date = {};
+      if (startDate) where.date[Op.gte] = startDate;
+      if (endDate) where.date[Op.lte] = endDate;
+    }
+
+    // Role-based filtering
+    if (req.user.role === 'user') {
+      where.userId = req.user.id;
+    } else if (req.user.role === 'manager') {
+      const teamMembers = await User.findAll({
+        where: { supervisorId: req.user.id },
+        attributes: ['id']
+      });
+      where.userId = {
+        [Op.in]: teamMembers.map(member => member.id)
+      };
+    }
+
+    const stats = await Puantaj.findAll({
+      where,
+      attributes: [
+        [sequelize.fn('COUNT', sequelize.col('id')), 'totalRecords'],
+        [sequelize.fn('SUM', sequelize.col('overtime')), 'totalOvertime'],
+        [sequelize.fn('AVG', 
+          sequelize.fn('TIMESTAMPDIFF', 
+            sequelize.literal('MINUTE'), 
+            sequelize.col('startTime'), 
+            sequelize.col('endTime')
+          )
+        ), 'avgWorkingMinutes'],
+        [sequelize.fn('COUNT', 
+          sequelize.literal('CASE WHEN status = "approved" THEN 1 END')
+        ), 'approvedCount'],
+        [sequelize.fn('COUNT', 
+          sequelize.literal('CASE WHEN status = "rejected" THEN 1 END')
+        ), 'rejectedCount'],
+        [sequelize.fn('COUNT', 
+          sequelize.literal('CASE WHEN status = "pending" THEN 1 END')
+        ), 'pendingCount']
+      ],
+      group: [sequelize.fn('DATE_FORMAT', sequelize.col('date'), '%Y-%m')]
+    });
+
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('Get puantaj stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting puantaj statistics'
+    });
+  }
+};
+
+module.exports = {
+  getAllPuantaj,
+  getPuantajById,
+  createPuantaj,
+  updatePuantaj,
+  deletePuantaj,
+  approvePuantaj,
+  rejectPuantaj,
+  getUserPuantaj,
+  getPuantajStats
 }; 

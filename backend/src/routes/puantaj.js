@@ -29,4 +29,22 @@ router.get('/isci/:isciId', puantajController.getIsciPuantajlari);
 router.get('/puantajci', isPuantajci, puantajController.getPuantajciPuantajlari);
 router.get('/puantajci/:puantajciId', isPuantajci, puantajController.getPuantajciPuantajlari);
 
+// Get all puantaj records
+router.get('/', puantajController.getAllPuantaj);
+
+// Get puantaj by ID
+router.get('/:id', puantajController.getPuantajById);
+
+// Approve puantaj (manager only)
+router.post('/:id/approve', puantajController.approvePuantaj);
+
+// Reject puantaj (manager only)
+router.post('/:id/reject', puantajController.rejectPuantaj);
+
+// Get user's puantaj records
+router.get('/user/:userId', puantajController.getUserPuantaj);
+
+// Get puantaj statistics
+router.get('/stats/overview', puantajController.getPuantajStats);
+
 module.exports = router; 

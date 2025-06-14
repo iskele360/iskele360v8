@@ -1,4 +1,6 @@
 const User = require('../models/User');
+const cloudinary = require('../services/cloudinaryService');
+const redis = require('../services/redisService');
 
 // Kullanıcı profili
 exports.getMe = async (req, res) => {
@@ -165,61 +167,6 @@ exports.deleteSelf = async (req, res) => {
   }
 };
 
-// Puantajcının başka bir kullanıcıyı silmesi
-exports.deleteUser = async (req, res) => {
-  try {
-    // Silinecek kullanıcı ID'si
-    const { userId } = req.params;
-
-    // Kullanıcıyı bul
-    const userToDelete = await User.findById(userId);
-
-    if (!userToDelete) {
-      return res.status(404).json({
-        success: false,
-        message: 'Kullanıcı bulunamadı'
-      });
-    }
-
-    // Yalnızca puantajcı rolündeki kullanıcılar başkasını silebilir
-    if (req.user.role !== 'puantajcı' && req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Bu işlem için yetkiniz bulunmamaktadır'
-      });
-    }
-
-    // Puantajcı yalnızca kendi oluşturduğu kullanıcıları silebilir
-    if (req.user.role === 'puantajcı' && 
-        userToDelete.createdBy && 
-        userToDelete.createdBy.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Yalnızca kendi oluşturduğunuz kullanıcıları silebilirsiniz'
-      });
-    }
-
-    // Kullanıcıyı sil
-    await User.findByIdAndDelete(userId);
-
-    // İlişkili diğer verileri de silmek için gerekli işlemler burada yapılabilir
-    // Örneğin: puantaj kayıtları, zimmet kayıtları, vb.
-    
-    // TODO: Puantaj ve zimmet silme işlemleri eklenecek
-
-    res.status(200).json({
-      success: true,
-      message: 'Kullanıcı başarıyla silindi'
-    });
-  } catch (error) {
-    console.error('Kullanıcı silme hatası:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Sunucu hatası, lütfen daha sonra tekrar deneyin'
-    });
-  }
-};
-
 // Kullanıcı profili güncelleme
 exports.updateProfile = async (req, res) => {
   try {
@@ -319,27 +266,194 @@ exports.updatePassword = async (req, res) => {
 // Tüm kullanıcıları getir (Yalnızca Admin ve Puantajcı için)
 exports.getAllUsers = async (req, res) => {
   try {
-    let query = {};
-    
-    // Puantajcı yalnızca kendi oluşturduğu kullanıcıları görebilir
-    if (req.user.role === 'puantajcı') {
-      query.createdBy = req.user._id;
-    }
-    
-    // Admin tüm kullanıcıları görebilir
-    
-    const users = await User.find(query);
-    
-    res.status(200).json({
+    const users = await User.findAll({
+      attributes: { exclude: ['password'] }
+    });
+
+    res.json({
       success: true,
-      count: users.length,
       data: users
     });
   } catch (error) {
-    console.error('Kullanıcı listeleme hatası:', error);
+    console.error('Get all users error:', error);
     res.status(500).json({
       success: false,
-      message: 'Sunucu hatası, lütfen daha sonra tekrar deneyin'
+      message: 'Error getting users'
     });
   }
+};
+
+const getUserById = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: user.toPublicJSON()
+    });
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting user'
+    });
+  }
+};
+
+const updateUser = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check permissions
+    if (req.user.role !== 'admin' && req.user.id !== user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized'
+      });
+    }
+
+    const { firstName, lastName, email, role, isActive } = req.body;
+
+    // Only admin can change role and active status
+    if (req.user.role !== 'admin') {
+      delete req.body.role;
+      delete req.body.isActive;
+    }
+
+    await user.update({
+      firstName: firstName || user.firstName,
+      lastName: lastName || user.lastName,
+      email: email || user.email,
+      role: role || user.role,
+      isActive: isActive !== undefined ? isActive : user.isActive
+    });
+
+    // Clear Redis cache
+    await redis.del(`user:${user.id}`);
+
+    res.json({
+      success: true,
+      data: user.toPublicJSON()
+    });
+  } catch (error) {
+    console.error('Update user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating user'
+    });
+  }
+};
+
+const deleteUser = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Only admin can delete users
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized'
+      });
+    }
+
+    // Delete profile image from Cloudinary if exists
+    if (user.profileImage) {
+      const publicId = user.profileImage.split('/').pop().split('.')[0];
+      await cloudinary.deleteImage(publicId);
+    }
+
+    // Delete user
+    await user.destroy();
+
+    // Clear Redis cache
+    await redis.del(`user:${user.id}`);
+
+    res.json({
+      success: true,
+      message: 'User deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting user'
+    });
+  }
+};
+
+const updateProfileImage = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Delete old profile image if exists
+    if (user.profileImage) {
+      const publicId = user.profileImage.split('/').pop().split('.')[0];
+      await cloudinary.deleteImage(publicId);
+    }
+
+    // Upload new image
+    const result = await cloudinary.uploadImage(
+      req.body.image,
+      `iskele360/profile/${user.id}`
+    );
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'Error uploading image'
+      });
+    }
+
+    // Update user profile
+    user.profileImage = result.url;
+    await user.save();
+
+    // Clear Redis cache
+    await redis.del(`user:${user.id}`);
+
+    res.json({
+      success: true,
+      data: {
+        profileImage: result.url
+      }
+    });
+  } catch (error) {
+    console.error('Update profile image error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating profile image'
+    });
+  }
+};
+
+module.exports = {
+  getAllUsers,
+  getUserById,
+  updateUser,
+  deleteUser,
+  updateProfileImage
 }; 

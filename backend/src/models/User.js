@@ -1,83 +1,75 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 const bcrypt = require('bcryptjs');
 
-const userSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  surname: {
-    type: String,
-    required: true,
-    trim: true
+const User = sequelize.define('User', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
   },
   email: {
-    type: String,
-    required: true,
+    type: DataTypes.STRING,
+    allowNull: false,
     unique: true,
-    trim: true,
-    lowercase: true
+    validate: {
+      isEmail: true
+    }
   },
   password: {
-    type: String,
-    required: true,
-    minlength: 6
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  firstName: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  lastName: {
+    type: DataTypes.STRING,
+    allowNull: false
   },
   role: {
-    type: String,
-    enum: ['admin', 'puantajcı', 'isci', 'malzemeci'],
-    default: 'puantajcı'
+    type: DataTypes.ENUM('admin', 'manager', 'user'),
+    defaultValue: 'user'
   },
-  code: {
-    type: String,
-    trim: true
+  isActive: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   },
-  createdAt: {
-    type: Date,
-    default: Date.now
+  lastLogin: {
+    type: DataTypes.DATE
   },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  supervisorId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+  profileImage: {
+    type: DataTypes.STRING
   }
 }, {
-  timestamps: true
-});
-
-// Şifre hashleme middleware
-userSchema.pre('save', async function(next) {
-  const user = this;
-  
-  // Şifre değiştirilmemişse veya yeni kullanıcı değilse
-  if (!user.isModified('password')) return next();
-  
-  try {
-    // Hash şifre
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(user.password, salt);
-    next();
-  } catch (error) {
-    next(error);
+  timestamps: true,
+  hooks: {
+    beforeCreate: async (user) => {
+      if (user.password) {
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(user.password, salt);
+      }
+    },
+    beforeUpdate: async (user) => {
+      if (user.changed('password')) {
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(user.password, salt);
+      }
+    }
   }
 });
 
-// Şifre karşılaştırma metodu
-userSchema.methods.comparePassword = async function(candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.password);
+// Instance method to check password
+User.prototype.comparePassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Kullanıcının güvenli bilgilerini döndüren metod
-userSchema.methods.toJSON = function() {
-  const user = this.toObject();
-  delete user.password;
-  return user;
+// Instance method to get public profile
+User.prototype.toPublicJSON = function() {
+  const values = { ...this.get() };
+  delete values.password;
+  return values;
 };
-
-const User = mongoose.model('User', userSchema);
 
 module.exports = User; 

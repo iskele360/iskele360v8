@@ -3,13 +3,9 @@ const User = require('./User');
 const Company = require('./Company');
 const Worker = require('./Worker');
 
-// User - Worker İlişkisi (1:1)
-User.hasOne(Worker);
-Worker.belongsTo(User);
-
-// Company - Worker İlişkisi (1:N)
-Company.hasMany(Worker, { foreignKey: 'companyId' });
-Worker.belongsTo(Company, { foreignKey: 'companyId' });
+// Define associations
+Company.hasMany(Worker);
+Worker.belongsTo(Company);
 
 // Model senkronizasyonu
 const syncModels = async () => {

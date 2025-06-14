@@ -13,8 +13,8 @@ const config = {
     password: process.env.DB_PASS || 'K9iWuJiLfXTDyT7tAfdSLWsRWCyXmaUwb'
   },
   redis: {
-    url: process.env.UPSTASH_REDIS_REST_URL || 'https://magnetic-malamute-11416.upstash.io',
-    token: process.env.UPSTASH_REDIS_REST_TOKEN || 'ASyYAAljcDExZTdjN2M1MTA4YjA0MDJhYWM1Mzg2MGVjZjc3ZTQxNHAxMzg2MGVjZjc3ZTQxNA'
+    url: process.env.UPSTASH_REDIS_REST_URL?.trim() || 'https://magnetic-malamute-11416.upstash.io',
+    token: process.env.UPSTASH_REDIS_REST_TOKEN?.trim() || 'ASyYAAljcDExZTdjN2M1MTA4YjA0MDJhYWM1Mzg2MGVjZjc3ZTQxNHAxMzg2MGVjZjc3ZTQxNA'
   },
   jwt: {
     secret: process.env.JWT_SECRET || 'iskele360v81257-src-v8-baran',

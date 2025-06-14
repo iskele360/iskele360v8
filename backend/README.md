@@ -1,60 +1,127 @@
-# İskele360 API
+# İskele360 Backend v8
 
-İskele360 uygulamasının backend API'si.
+Modern Node.js backend for İskele360 project, built with Express.js and PostgreSQL.
 
-## Kurulum
+## Features
 
-### Gereksinimler
+- 🔐 JWT Authentication
+- 📊 PostgreSQL Database
+- 🚀 Redis Caching
+- ☁️ Cloudinary Integration
+- 🔒 Rate Limiting
+- 📝 Detailed Logging
+- 🛡️ Security Headers
+- 🌐 CORS Support
 
-- Node.js (v14+)
-- MongoDB Atlas hesabı
+## Tech Stack
 
-### Adımlar
+- Node.js v20.19.2
+- Express.js
+- PostgreSQL (via Sequelize ORM)
+- Redis (via Upstash)
+- Cloudinary
+- JWT
 
-1. Bağımlılıkları yükleyin:
-   ```
-   npm install
-   ```
+## Prerequisites
 
-2. `config.js` dosyasını düzenleyin:
-   - MongoDB Atlas connection string'i kendi bağlantı bilgilerinizle güncelleyin
-   - JWT_SECRET değerini güvenli bir şekilde değiştirin
+- Node.js v20.19.2
+- PostgreSQL
+- Redis
 
-3. Sunucuyu başlatın:
-   ```
-   npm run dev
-   ```
+## Setup
 
-## Google Cloud Run Deployment
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/iskele360-backend-v8.git
+cd iskele360-backend-v8
+```
 
-1. Google Cloud CLI kurun ve giriş yapın
+2. Install dependencies:
+```bash
+npm install
+```
 
-2. Projeyi seçin:
-   ```
-   gcloud config set project [PROJECT_ID]
-   ```
+3. Create .env file:
+```bash
+cp .env.example .env
+```
 
-3. Docker image'ı oluşturun ve Cloud Registry'ye gönderin:
-   ```
-   gcloud builds submit --tag gcr.io/[PROJECT_ID]/iskele360-api
-   ```
+4. Update environment variables in .env file with your values.
 
-4. Cloud Run'a deploy edin:
-   ```
-   gcloud run deploy iskele360-api --image gcr.io/[PROJECT_ID]/iskele360-api --platform managed --region us-central1 --allow-unauthenticated
-   ```
+5. Start the development server:
+```bash
+npm run dev
+```
+
+## Project Structure
+
+```
+src/
+├── config/
+│   └── database.js
+├── controllers/
+│   ├── authController.js
+│   ├── userController.js
+│   └── puantajController.js
+├── models/
+│   ├── User.js
+│   └── Puantaj.js
+├── routes/
+│   ├── auth.js
+│   ├── userRoutes.js
+│   └── puantaj.js
+├── middleware/
+│   └── verifyToken.js
+├── services/
+│   ├── redisService.js
+│   └── cloudinaryService.js
+└── server.js
+```
 
 ## API Endpoints
 
-### Auth
-
-- `POST /api/auth/signup`: Puantajcı kaydı
-- `POST /api/auth/login`: Giriş (email veya kod ile)
+### Authentication
+- POST /api/auth/register - Register new user
+- POST /api/auth/login - Login user
+- POST /api/auth/logout - Logout user
+- GET /api/auth/me - Get current user
 
 ### Users
+- GET /api/users - Get all users (admin only)
+- GET /api/users/:id - Get user by ID
+- PUT /api/users/:id - Update user
+- DELETE /api/users/:id - Delete user (admin only)
+- POST /api/users/profile-image - Update profile image
 
-- `GET /api/users/me`: Kullanıcı profili
-- `POST /api/users/worker`: İşçi oluşturma (puantajcı yetkisi gerekli)
-- `POST /api/users/material-manager`: Malzemeci oluşturma (puantajcı yetkisi gerekli)
-- `GET /api/users/workers`: Puantajcının işçilerini listeleme
-- `GET /api/users/material-managers`: Puantajcının malzemecilerini listeleme 
+### Puantaj
+- GET /api/puantaj - Get all puantaj records
+- GET /api/puantaj/:id - Get puantaj by ID
+- POST /api/puantaj - Create new puantaj
+- PUT /api/puantaj/:id - Update puantaj
+- DELETE /api/puantaj/:id - Delete puantaj
+- POST /api/puantaj/:id/approve - Approve puantaj (manager only)
+- POST /api/puantaj/:id/reject - Reject puantaj (manager only)
+- GET /api/puantaj/user/:userId - Get user's puantaj records
+- GET /api/puantaj/stats/overview - Get puantaj statistics
+
+## Deployment
+
+The application is configured for deployment on Render.com. The deployment configuration is in `render.yaml`.
+
+### Deployment Steps
+
+1. Create a new Web Service on Render
+2. Connect your GitHub repository
+3. Use the following settings:
+   - Environment: Node
+   - Build Command: `npm install`
+   - Start Command: `npm start`
+   - Auto-Deploy: Yes
+
+### Environment Variables
+
+Make sure to set all environment variables in Render dashboard as specified in `.env.example`.
+
+## License
+
+This project is private and confidential. All rights reserved. 

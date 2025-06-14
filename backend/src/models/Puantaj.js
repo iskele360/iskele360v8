@@ -1,99 +1,83 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 
-const puantajSchema = new mongoose.Schema({
-  tarih: {
-    type: Date,
-    required: true,
-    default: Date.now
+const Puantaj = sequelize.define('Puantaj', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
   },
-  isciId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+  userId: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
   },
-  puantajciId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+  date: {
+    type: DataTypes.DATEONLY,
+    allowNull: false
   },
-  baslangicSaati: {
-    type: String,
-    required: true
+  startTime: {
+    type: DataTypes.TIME,
+    allowNull: false
   },
-  bitisSaati: {
-    type: String,
-    required: true
+  endTime: {
+    type: DataTypes.TIME,
+    allowNull: false
   },
-  calismaSuresi: {
-    type: Number, // Saat cinsinden
-    required: true
+  breakTime: {
+    type: DataTypes.INTEGER, // Minutes
+    defaultValue: 60
   },
-  projeId: {
-    type: String,
-    required: true
+  overtime: {
+    type: DataTypes.INTEGER, // Minutes
+    defaultValue: 0
   },
-  projeBilgisi: {
-    type: String,
-    required: true
+  location: {
+    type: DataTypes.STRING,
+    allowNull: false
   },
-  aciklama: {
-    type: String,
-    default: ''
+  notes: {
+    type: DataTypes.TEXT
   },
-  durum: {
-    type: String,
-    enum: ['tamamlandi', 'devam_ediyor', 'iptal_edildi'],
-    default: 'tamamlandi'
+  status: {
+    type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+    defaultValue: 'pending'
+  },
+  approvedBy: {
+    type: DataTypes.UUID,
+    references: {
+      model: 'Users',
+      key: 'id'
+    }
+  },
+  approvedAt: {
+    type: DataTypes.DATE
   }
 }, {
-  timestamps: true
-});
-
-// Ana sorgu indeksleri
-// 1. Puantaj kayıtlarını işçi ve tarih bazında indeksle (işçilere ait kayıtları sorgularken hızlı erişim için)
-puantajSchema.index({ isciId: 1, tarih: -1 });
-
-// 2. Puantaj kayıtlarını puantajcı ve tarih bazında indeksle (ana dashboard sorgusu için optimize)
-puantajSchema.index({ puantajciId: 1, tarih: -1 });
-
-// 3. Compound indeks: Puantajcı + İşçi + Tarih (filtreleme yaparken hızlı erişim için)
-puantajSchema.index({ puantajciId: 1, isciId: 1, tarih: -1 });
-
-// 4. Proje bazlı sorgular için indeks
-puantajSchema.index({ puantajciId: 1, projeId: 1, tarih: -1 });
-
-// 5. Durum bazlı sorgular için indeks
-puantajSchema.index({ puantajciId: 1, durum: 1, tarih: -1 });
-
-// 6. Aggregation sorgularını hızlandıracak indeks (istatistikler için)
-puantajSchema.index({ puantajciId: 1, tarih: 1, calismaSuresi: 1 });
-
-// 7. Arama işlemleri için text indeksi
-puantajSchema.index(
-  { projeBilgisi: 'text', aciklama: 'text' },
-  { 
-    weights: { 
-      projeBilgisi: 10, 
-      aciklama: 5 
+  timestamps: true,
+  indexes: [
+    {
+      fields: ['userId', 'date'],
+      unique: true
     },
-    name: 'text_index' 
-  }
-);
-
-/**
- * Puantaj kaydı oluşturulmadan önce çalışan middleware
- * tarih alanını normalize eder
- */
-puantajSchema.pre('save', function(next) {
-  // Tarih değeri varsa, saat kısmını sıfırla (günlük bazda gruplamak için)
-  if (this.tarih) {
-    const tarih = new Date(this.tarih);
-    tarih.setHours(0, 0, 0, 0);
-    this.tarih = tarih;
-  }
-  next();
+    {
+      fields: ['date']
+    },
+    {
+      fields: ['status']
+    }
+  ]
 });
 
-const Puantaj = mongoose.model('Puantaj', puantajSchema);
+// Instance method to calculate total hours
+Puantaj.prototype.calculateTotalHours = function() {
+  const start = new Date(`2000-01-01T${this.startTime}`);
+  const end = new Date(`2000-01-01T${this.endTime}`);
+  const totalMinutes = (end - start) / 1000 / 60 - this.breakTime + this.overtime;
+  return Math.round(totalMinutes / 60 * 100) / 100; // Round to 2 decimal places
+};
 
 module.exports = Puantaj; 

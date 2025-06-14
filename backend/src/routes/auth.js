@@ -1,14 +1,14 @@
 const express = require('express');
-const authController = require('../controllers/authController');
-const { verifyToken } = require('../middleware/verifyToken');
-
 const router = express.Router();
+const { register, login, me } = require('../controllers/authController');
+const verifyToken = require('../middleware/verifyToken');
 
-// Kayıt ve giriş işlemleri
-router.post('/register', authController.register);
-router.post('/login', authController.login);
+// Public routes
+router.post('/register', register);
+router.post('/login', login);
 
-// Kullanıcı profili (token gerekli)
-router.get('/profile', verifyToken, authController.getProfile);
+// Protected routes
+router.use(verifyToken);
+router.get('/me', me);
 
 module.exports = router; 

@@ -1,39 +1,46 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+require('dotenv').config();
 
 // Token doğrulama middleware
 const verifyToken = async (req, res, next) => {
   try {
-    // Header'dan token'ı al
+    // Token'ı header'dan al
     const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Yetkilendirme tokeni bulunamadı' 
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        message: 'No token provided'
       });
     }
-    
-    // Bearer kısmını kaldırıp token'ı çıkar
+
+    // Bearer token'ı ayır
     const token = authHeader.split(' ')[1];
-    
     if (!token) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Geçersiz token formatı' 
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token format'
       });
     }
-    
+
     // Token'ı doğrula
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
     // Kullanıcıyı bul
-    const user = await User.findById(decoded.id);
+    const user = await User.findByPk(decoded.id);
     
     if (!user) {
       return res.status(401).json({ 
         success: false, 
-        message: 'Kullanıcı bulunamadı' 
+        message: 'User not found' 
+      });
+    }
+
+    // Check if user is active
+    if (!user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account is disabled'
       });
     }
     
@@ -41,67 +48,50 @@ const verifyToken = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Geçersiz token' 
-      });
-    }
-    
     if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Token süresi doldu' 
+      return res.status(401).json({
+        success: false,
+        message: 'Token expired'
       });
     }
     
-    console.error('Token doğrulama hatası:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Sunucu hatası' 
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid token'
     });
   }
 };
 
-// Puantajcı rolünü kontrol eden middleware
-const isPuantajci = (req, res, next) => {
-  if (req.user && req.user.role === 'puantajcı') {
-    return next();
-  }
-  
-  return res.status(403).json({ 
-    success: false, 
-    message: 'Bu işlem için yetkiniz bulunmamaktadır' 
-  });
+// Role-based middleware
+const checkRole = (roles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized'
+      });
+    }
+
+    next();
+  };
 };
 
-// Malzemeci rolünü kontrol eden middleware
-const isMalzemeci = (req, res, next) => {
-  if (req.user && req.user.role === 'malzemeci') {
-    return next();
-  }
-  
-  return res.status(403).json({ 
-    success: false, 
-    message: 'Bu işlem için yetkiniz bulunmamaktadır' 
-  });
-};
-
-// Admin rolünü kontrol eden middleware
-const isAdmin = (req, res, next) => {
-  if (req.user && req.user.role === 'admin') {
-    return next();
-  }
-  
-  return res.status(403).json({ 
-    success: false, 
-    message: 'Bu işlem için yetkiniz bulunmamaktadır' 
-  });
-};
+// Role-based middleware shortcuts
+const isAdmin = checkRole(['admin']);
+const isManager = checkRole(['admin', 'manager']);
+const isUser = checkRole(['admin', 'manager', 'user']);
 
 module.exports = {
   verifyToken,
-  isPuantajci,
-  isMalzemeci,
-  isAdmin
+  isAdmin,
+  isManager,
+  isUser,
+  checkRole
 }; 

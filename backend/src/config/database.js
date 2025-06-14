@@ -1,33 +1,26 @@
-const mongoose = require('mongoose');
+const { Sequelize } = require('sequelize');
+require('dotenv').config();
 
-const connectDB = async () => {
-  try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      // Deprecated options removed
-      autoIndex: true,
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      family: 4
-    });
-
-    console.log('MongoDB bağlantısı başarılı');
-    
-    // İndeksleri oluştur
-    console.log('MongoDB indeksleri oluşturuluyor...');
-    await Promise.all([
-      require('../models/user').createIndexes(),
-      require('../models/project').createIndexes(),
-      require('../models/notification').createIndexes(),
-      require('../models/activity').createIndexes()
-    ]);
-    console.log('MongoDB indeksleri oluşturuldu');
-
-    return conn;
-  } catch (err) {
-    console.error('MongoDB bağlantı hatası:', err.message);
-    process.exit(1);
+const sequelize = new Sequelize({
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  database: process.env.DB_NAME,
+  username: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  dialect: 'postgres',
+  logging: false,
+  dialectOptions: {
+    ssl: {
+      require: true,
+      rejectUnauthorized: false
+    }
+  },
+  pool: {
+    max: 5,
+    min: 0,
+    acquire: 30000,
+    idle: 10000
   }
-};
+});
 
-module.exports = connectDB; 
+module.exports = sequelize; 
